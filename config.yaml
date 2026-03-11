@@ -1,0 +1,120 @@
+detection:
+  confidence_threshold: 0.3
+  iou_threshold: 0.5
+
+# 视频处理配置（针对token限制优化）
+video:
+  max_frames: 3          # 提取帧数（建议2-4帧，受限于max_model_len）
+  frame_max_size: 512    # 帧图片最大边长（像素）
+  frame_quality: 70      # JPEG编码质量（1-100）
+  batch_mode: false      # 是否分批处理（逐帧分析后汇总）
+
+logging:
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  level: INFO
+scenes:
+  0: 路面抛洒物
+  1: 车辆违停
+  2: 路面裂缝
+  3: 路面坑洼
+  4: 路面积水
+  5: 护栏破损
+  6: 边坡滑坡
+  7: 排水沟积水
+  8: 排水沟破损
+server:
+  host: 0.0.0.0
+  port: 8000
+# vlm:
+#   api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+#   base_url: https://api.siliconflow.cn/v1
+#   max_tokens: 4096
+#   model: Qwen/Qwen3-VL-8B-Instruct
+#   provider: openai
+#   temperature: 0.1
+#   timeout: 300
+
+# 单VLM配置（默认）
+vlm:
+  api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+  base_url: http://10.110.11.203:8004/v1
+  max_tokens: 1024      # 输出token限制（需预留空间给输入图片，max_model_len=6000时建议≤1024）
+  model: Qwen2_5_VL_7B
+  provider: openai
+  temperature: 0.0
+  timeout: 300
+
+# 多VLM配置（并行测试用）
+# vlms:
+#   - name: siliconflow_qwen
+#     api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+#     base_url: https://api.siliconflow.cn/v1
+#     model: Qwen/Qwen3-VL-8B-Instruct
+#     max_tokens: 4096
+#     temperature: 0.0
+#     timeout: 300
+#   - name: local_qwen
+#     api_key: sk-xxx
+#     base_url: http://10.110.11.203:8004/v1
+#     model: Qwen2_5_VL_7B
+#     max_tokens: 4096
+#     temperature: 0.0
+#     timeout: 300
+
+vlms:
+  - name: local_vlm_0
+    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+    base_url: http://10.110.11.203:8010/v1
+    model: Qwen2_5_VL_7B
+    max_tokens: 1024
+    temperature: 0.0
+    timeout: 300
+  - name: local_vlm_1
+    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+    base_url: http://10.110.11.203:8001/v1
+    model: Qwen2_5_VL_7B
+    max_tokens: 1024
+    temperature: 0.0
+    timeout: 300
+  - name: local_vlm_2
+    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+    base_url: http://10.110.11.203:8002/v1
+    model: Qwen2_5_VL_7B
+    max_tokens: 1024
+    temperature: 0.0
+    timeout: 300
+  - name: local_vlm_3
+    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+    base_url: http://10.110.11.203:8003/v1
+    model: Qwen2_5_VL_7B
+    max_tokens: 1024
+    temperature: 0.0
+    timeout: 300
+  - name: local_vlm_4
+    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+    base_url: http://10.110.11.203:8004/v1
+    model: Qwen2_5_VL_7B
+    max_tokens: 1024
+    temperature: 0.0
+    timeout: 300
+  - name: local_vlm_5
+    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+    base_url: http://10.110.11.203:8005/v1
+    model: Qwen2_5_VL_7B
+    max_tokens: 1024
+    temperature: 0.0
+    timeout: 300
+  - name: local_vlm_6
+    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+    base_url: http://10.110.11.203:8006/v1
+    model: Qwen2_5_VL_7B
+    max_tokens: 1024
+    temperature: 0.0
+    timeout: 300
+  - name: local_vlm_7
+    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+    base_url: http://10.110.11.203:8007/v1
+    model: Qwen2_5_VL_7B
+    max_tokens: 1024
+    temperature: 0.0
+    timeout: 300

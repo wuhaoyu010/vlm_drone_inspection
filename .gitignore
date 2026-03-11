@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment (use config.yaml instead)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Test
+.pytest_cache/
+test_results.json
+
+# Temporary files
+*.tmp
+*.temp
+pdf_content.txt
+read_files.py
+
+# Output
+annotated_output.mp4
+output/
+
+# Config (keep template)
+# config.yaml  # 不要忽略，因为用户需要配置
+竞赛图片视频材料/
+竞赛图片视频材料.zip
+道通人工智能大赛决赛技术文件----人工智能赛道 对外发布版20260301_已签章.pdf
+人工智能赛道问题.xlsx
+~$人工智能赛道问题.xlsx
+bytetrack_x_mot20.tar
+bytetrack_model/
