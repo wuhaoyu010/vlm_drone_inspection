@@ -111,6 +111,22 @@ class Config:
     def logging(self) -> Dict[str, Any]:
         return self._config.get("logging", {})
 
+    @property
+    def models(self) -> Dict[str, Any]:
+        """获取模型配置"""
+        return self._config.get("models", {})
+
+    def get_task_config(self, task_name: str) -> Dict[str, Any]:
+        """获取指定Task的模型配置
+
+        Args:
+            task_name: 任务名称，如 "task1", "task2", "task3", "task4"
+
+        Returns:
+            该Task的模型配置字典
+        """
+        return self.models.get(task_name, {})
+
     def get(self, key: str, default: Any = None) -> Any:
         """获取配置项"""
         keys = key.split(".")

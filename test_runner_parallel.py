@@ -42,6 +42,15 @@ TASK_SCENE_MAP = {
     'Task_4/排水沟积水': [7],
     'Task_4/排水沟破损': [8],
     'Task_4/标志牌异常': [8],
+    # 子目录独立映射（用于 -t Task_X 参数时）
+    '路面裂缝': [2],
+    '路面坑洼': [3],
+    '路面积水': [4],
+    '护栏破损': [5],
+    '边坡异常': [6],
+    '排水沟积水': [7],
+    '排水沟破损': [8],
+    '标志牌异常': [8],
 }
 
 # 图片/视频扩展名
@@ -357,6 +366,12 @@ def main():
         default=None,
         help='限制处理的文件数量 (用于测试)'
     )
+    parser.add_argument(
+        '--task', '-t',
+        type=str,
+        default=None,
+        help='只处理指定Task (如: Task_1, Task_2, Task_3, Task_4)'
+    )
 
     args = parser.parse_args()
 
@@ -365,8 +380,27 @@ def main():
         print(f"错误: 输入目录不存在: {args.input}")
         sys.exit(1)
 
+    # 如果指定了特定Task，修改输入目录
+    if args.task:
+        task_dir = os.path.join(args.input, args.task)
+        if os.path.exists(task_dir):
+            args.input = task_dir
+            print(f"指定Task: {args.task}")
+        else:
+            print(f"错误: Task目录不存在: {task_dir}")
+            sys.exit(1)
+
     # 清空并创建输出目录
-    clear_output_dir(args.output)
+    if args.task:
+        # 只清空指定Task的输出目录
+        task_output_dir = os.path.join(args.output, args.task)
+        if os.path.exists(task_output_dir):
+            import shutil
+            print(f"清空输出目录: {task_output_dir}")
+            shutil.rmtree(task_output_dir)
+        os.makedirs(args.output, exist_ok=True)
+    else:
+        clear_output_dir(args.output)
 
     # 加载VLM服务配置
     from config import config

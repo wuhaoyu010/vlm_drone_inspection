@@ -17,13 +17,23 @@ from prompts import TASK2_SYSTEM_PROMPT, TASK2_USER_PROMPT
 # YOLO导入
 from ultralytics import YOLO
 
+# 配置导入
+from config import config
 
-# 配置参数
-MODEL_PATH = "yolov8n.pt"     # YOLO模型路径（yolov8n最快，s/m/l/x更准但更慢）
-CONF_THRESH = 0.15            # 检测置信度阈值（降低以提高召回率）
-IOU_THRESH = 0.7              # IOU阈值
-MIN_TRACK_FRAMES = 10         # 最小追踪帧数（用于判断违停）
-TRAJECTORY_LENGTH = 30        # 轨迹显示长度（帧数）
+
+def get_task2_config() -> Dict[str, Any]:
+    """获取Task2配置，带默认值"""
+    task_config = config.get_task_config("task2")
+    return {
+        "model_path": task_config.get("model_path", "yolov8n.pt"),
+        "conf_threshold": task_config.get("conf_threshold", 0.15),
+        "iou_threshold": task_config.get("iou_threshold", 0.7),
+        "min_track_frames": task_config.get("min_track_frames", 10),
+        "trajectory_length": task_config.get("trajectory_length", 30),
+        "tracker": task_config.get("tracker", "bytetrack.yaml"),
+        "device": task_config.get("device", "auto"),
+    }
+
 
 # 车辆类别（COCO数据集）
 VEHICLE_CLASSES = {2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck'}
@@ -48,24 +58,62 @@ def get_video_info(video_path: str) -> Tuple[int, int, int, float]:
 class VehicleTracker:
     """车辆追踪器 - YOLO + ByteTrack（官方接口）"""
 
-    def __init__(self, model_path: str = MODEL_PATH):
-        """初始化追踪器"""
-        print(f"[Task2] 加载YOLO模型: {model_path}")
-        self.model = YOLO(model_path)
-        # 自动检测并使用GPU
-        import torch
-        if torch.cuda.is_available():
-            self.model.to('cuda')
-            print(f"[Task2] 使用GPU: {torch.cuda.get_device_name(0)}")
+    def __init__(self, model_path: str = None, device: str = "auto"):
+        """初始化追踪器
+
+        Args:
+            model_path: YOLO模型路径，为None则从配置读取
+            device: 运行设备，auto/cuda/cpu
+        """
+        # 获取配置
+        self.config = get_task2_config()
+
+        # 模型路径：参数优先，其次配置
+        self.model_path = model_path or self.config["model_path"]
+        self.conf_threshold = self.config["conf_threshold"]
+        self.iou_threshold = self.config["iou_threshold"]
+        self.min_track_frames = self.config["min_track_frames"]
+        self.trajectory_length = self.config["trajectory_length"]
+        self.tracker = self.config["tracker"]
+
+        print(f"[Task2] 加载YOLO模型: {self.model_path}")
+        self.model = YOLO(self.model_path)
+
+        # 确定运行设备
+        self.device = self._get_device(device)
+        if self.device == 'cuda':
+            try:
+                import torch
+                # 检查CUDA和cuDNN是否都可用
+                if not torch.cuda.is_available():
+                    raise RuntimeError("CUDA不可用")
+                if not torch.backends.cudnn.is_available():
+                    raise RuntimeError("cuDNN不可用")
+                self.model.to('cuda')
+                print(f"[Task2] 使用GPU: {torch.cuda.get_device_name(0)}")
+            except Exception as e:
+                print(f"[Task2] GPU初始化失败({e})，回退到CPU")
+                self.device = 'cpu'
         else:
-            print("[Task2] 使用CPU")
-        self.model_name = model_path
+            print(f"[Task2] 使用设备: {self.device}")
+
+    def _get_device(self, device: str) -> str:
+        """确定运行设备"""
+        if device == "auto":
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    return "cuda"
+            except:
+                pass
+            return "cpu"
+        return device
 
     def track_video(
         self,
         video_path: str,
         output_video: str = None,
-        min_track_frames: int = MIN_TRACK_FRAMES
+        min_track_frames: int = None
     ) -> Tuple[List[Dict], Dict]:
         """
         使用YOLO track方法追踪视频中的车辆并检测违停
@@ -73,12 +121,15 @@ class VehicleTracker:
         Args:
             video_path: 视频路径
             output_video: 输出标注视频路径
-            min_track_frames: 最小追踪帧数阈值（超过此帧数认为违停）
+            min_track_frames: 最小追踪帧数阈值（超过此帧数认为违停），为None则使用配置值
 
         Returns:
             violations: 违停检测结果
             video_info: 视频信息
         """
+        # 使用参数或配置值
+        min_track_frames = min_track_frames or self.min_track_frames
+
         # 获取视频信息
         width, height, total_frames, fps = get_video_info(video_path)
 
@@ -100,20 +151,17 @@ class VehicleTracker:
 
         # 使用YOLO的track方法进行视频追踪
         # persist=True 保持追踪器状态，tracker="bytetrack.yaml" 使用ByteTrack
-        import torch
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
         results = self.model.track(
             source=video_path,
-            conf=CONF_THRESH,
-            iou=IOU_THRESH,
+            conf=self.conf_threshold,
+            iou=self.iou_threshold,
             classes=list(VEHICLE_CLASSES.keys()),  # 只检测车辆类别
             persist=True,
-            tracker="bytetrack.yaml",
+            tracker=self.tracker,
             verbose=False,
             save=False,
             stream=True,  # 流式处理，减少内存
-            device=device  # 使用GPU加速
+            device=self.device  # 使用配置的设备
         )
 
         frame_id = 0
@@ -146,7 +194,7 @@ class VehicleTracker:
 
                         # 记录轨迹点
                         trajectory_history[track_id].append((float(cx), float(cy)))
-                        if len(trajectory_history[track_id]) > TRAJECTORY_LENGTH:
+                        if len(trajectory_history[track_id]) > self.trajectory_length:
                             trajectory_history[track_id].pop(0)
 
                         frame_tracks.append({
@@ -191,7 +239,7 @@ class VehicleTracker:
         # 生成标注视频
         if output_video and violations:
             print(f"[Task2] 生成标注视频...")
-            self._generate_annotated_video(video_path, output_video, all_tracks, trajectory_history, fps, width, height)
+            self._generate_annotated_video(video_path, output_video, all_tracks, trajectory_history, fps, width, height, min_track_frames)
 
         unique_tracks = len(set(v['track_id'] for v in violations))
         print(f"[Task2] 检测到 {unique_tracks} 个违停车辆")
@@ -206,7 +254,8 @@ class VehicleTracker:
         trajectory_history: Dict[int, List[Tuple[float, float]]],
         fps: float,
         width: int,
-        height: int
+        height: int,
+        min_track_frames: int
     ):
         """生成带标注和轨迹的视频"""
         os.makedirs(os.path.dirname(output_video) if os.path.dirname(output_video) else '.', exist_ok=True)
@@ -221,7 +270,7 @@ class VehicleTracker:
         # 计算违停ID集合
         violation_ids = set()
         for track_id, traj in trajectory_history.items():
-            if len(traj) >= MIN_TRACK_FRAMES:
+            if len(traj) >= min_track_frames:
                 violation_ids.add(track_id)
 
         frame_id = 0
@@ -302,7 +351,7 @@ class Task2Processor(BaseProcessor):
             violations, video_info = tracker.track_video(
                 input_data,
                 output_video,
-                min_track_frames=MIN_TRACK_FRAMES
+                min_track_frames=None  # 使用配置值
             )
 
             # 判断是否有违停

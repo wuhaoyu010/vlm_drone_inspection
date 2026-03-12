@@ -2,6 +2,36 @@ detection:
   confidence_threshold: 0.3
   iou_threshold: 0.5
 
+# 模型配置（各Task使用的模型路径）
+models:
+  # Task1: 抛洒物检测（预留）
+  task1:
+    model_path: ""           # YOLO模型路径，为空则使用VLM
+    conf_threshold: 0.3
+    iou_threshold: 0.5
+
+  # Task2: 车辆违停检测
+  task2:
+    model_path: "yolov8n.pt" # YOLO模型路径（yolov8n/yolov8s/yolo26n/yolo26x）
+    conf_threshold: 0.15
+    iou_threshold: 0.7
+    min_track_frames: 10     # 最小追踪帧数（判断违停阈值）
+    trajectory_length: 30    # 轨迹显示长度（帧数）
+    tracker: "bytetrack.yaml" # 追踪器：bytetrack.yaml / botsort.yaml
+    device: "auto"           # auto(自动检测)/cuda(强制GPU)/cpu(强制CPU)
+
+  # Task3: 路面病害检测（预留）
+  task3:
+    model_path: ""           # YOLO/分割模型路径，为空则使用VLM
+    conf_threshold: 0.3
+    iou_threshold: 0.5
+
+  # Task4: 路外病害检测（预留）
+  task4:
+    model_path: ""           # YOLO模型路径，为空则使用VLM
+    conf_threshold: 0.3
+    iou_threshold: 0.5
+
 # 视频处理配置（针对token限制优化）
 video:
   max_frames: 3          # 提取帧数（建议2-4帧，受限于max_model_len）
