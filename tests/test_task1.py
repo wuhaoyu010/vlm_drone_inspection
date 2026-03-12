@@ -76,13 +76,16 @@ class TestTask1Processor:
 
     def test_process_denormalizes_bbox(self, mock_vlm_client, sample_image_path):
         """Test that bbox is denormalized"""
-        mock_vlm_client.chat_with_image.return_value = '''```json
+        mock_vlm_client.chat_with_image.return_value = {
+            "content": '''```json
 {
     "l1_result": [{"bbox": [156, 208, 312, 416], "category": "test"}],
     "l2_result": "test",
     "l3_result": "test"
 }
-```'''
+```''',
+            "processed_dimensions": (640, 480)
+        }
         processor = Task1Processor(mock_vlm_client)
         result = processor.process(sample_image_path)
 
@@ -94,7 +97,8 @@ class TestTask1Processor:
 
     def test_process_filters_invalid_bbox(self, mock_vlm_client, sample_image_path):
         """Test that invalid bboxes are filtered out"""
-        mock_vlm_client.chat_with_image.return_value = '''```json
+        mock_vlm_client.chat_with_image.return_value = {
+            "content": '''```json
 {
     "l1_result": [
         {"bbox": [0, 0, 0, 0], "category": "invalid"},
@@ -103,7 +107,9 @@ class TestTask1Processor:
     "l2_result": "test",
     "l3_result": "test"
 }
-```'''
+```''',
+            "processed_dimensions": (640, 480)
+        }
         processor = Task1Processor(mock_vlm_client)
         result = processor.process(sample_image_path)
 
@@ -120,7 +126,7 @@ class TestTask1Processor:
 
     def test_process_empty_response(self, mock_vlm_client, sample_image_path):
         """Test processing empty VLM response"""
-        mock_vlm_client.chat_with_image.return_value = ""
+        mock_vlm_client.chat_with_image.return_value = {"content": "", "processed_dimensions": None}
         processor = Task1Processor(mock_vlm_client)
         result = processor.process(sample_image_path)
 
@@ -128,7 +134,10 @@ class TestTask1Processor:
 
     def test_process_malformed_json(self, mock_vlm_client, sample_image_path):
         """Test processing malformed JSON response"""
-        mock_vlm_client.chat_with_image.return_value = "This is not valid JSON {{{"
+        mock_vlm_client.chat_with_image.return_value = {
+            "content": "This is not valid JSON {{{",
+            "processed_dimensions": None
+        }
         processor = Task1Processor(mock_vlm_client)
         result = processor.process(sample_image_path)
 

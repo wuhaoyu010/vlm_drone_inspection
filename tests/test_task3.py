@@ -52,13 +52,16 @@ class TestTask3Processor:
 
     def test_process_with_detection(self, mock_vlm_client, sample_image_path):
         """Test processing with detection"""
-        mock_vlm_client.chat_with_image.return_value = '''```json
+        mock_vlm_client.chat_with_image.return_value = {
+            "content": '''```json
 {
     "l1_result": [{"bbox": [100, 100, 200, 200], "category": "裂缝", "scene_id": 2}],
     "l2_result": "检测到裂缝",
     "l3_result": "风险等级：P1"
 }
-```'''
+```''',
+            "processed_dimensions": (640, 480)
+        }
         processor = Task3Processor(mock_vlm_client)
         result = processor.process(sample_image_path)
 
@@ -118,13 +121,16 @@ class TestTask3Processor:
 
     def test_process_denormalizes_and_validates_bbox(self, mock_vlm_client, sample_image_path):
         """Test that bbox is denormalized and validated"""
-        mock_vlm_client.chat_with_image.return_value = '''```json
+        mock_vlm_client.chat_with_image.return_value = {
+            "content": '''```json
 {
     "l1_result": [{"bbox": [156, 208, 312, 416], "category": "裂缝"}],
     "l2_result": "test",
     "l3_result": "test"
 }
-```'''
+```''',
+            "processed_dimensions": (640, 480)
+        }
         processor = Task3Processor(mock_vlm_client)
         result = processor.process(sample_image_path)
 
@@ -134,7 +140,8 @@ class TestTask3Processor:
 
     def test_process_filters_invalid_bbox(self, mock_vlm_client, sample_image_path):
         """Test that invalid bboxes are filtered"""
-        mock_vlm_client.chat_with_image.return_value = '''```json
+        mock_vlm_client.chat_with_image.return_value = {
+            "content": '''```json
 {
     "l1_result": [
         {"bbox": [0, 0, 0, 0], "category": "invalid"},
@@ -143,7 +150,9 @@ class TestTask3Processor:
     "l2_result": "test",
     "l3_result": "test"
 }
-```'''
+```''',
+            "processed_dimensions": (640, 480)
+        }
         processor = Task3Processor(mock_vlm_client)
         result = processor.process(sample_image_path)
 

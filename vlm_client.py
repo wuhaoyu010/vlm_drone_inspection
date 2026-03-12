@@ -56,7 +56,7 @@ class VLMClient:
             max_size: 最大边长 (默认1920)
 
         Returns:
-            (base64_data, mime_type)
+            (base64_data, mime_type, processed_width, processed_height)
         """
         try:
             import cv2
@@ -73,24 +73,26 @@ class VLMClient:
 
             # 获取原始尺寸
             h, w = img.shape[:2]
+            processed_w, processed_h = w, h
 
             # 如果图片太大，进行缩放
             if max(h, w) > max_size:
                 scale = max_size / max(h, w)
-                new_w = int(w * scale)
-                new_h = int(h * scale)
-                img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                processed_w = int(w * scale)
+                processed_h = int(h * scale)
+                img = cv2.resize(img, (processed_w, processed_h), interpolation=cv2.INTER_AREA)
 
             # 编码为JPEG
             _, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 85])
             base64_data = base64.b64encode(buffer).decode('utf-8')
 
-            return base64_data, "image/jpeg"
+            return base64_data, "image/jpeg", processed_w, processed_h
 
         except ImportError:
             # 如果没有opencv，直接读取原图
             with open(image_path, "rb") as f:
-                return base64.b64encode(f.read()).decode("utf-8"), self._get_image_mime_type(image_path)
+                # 无法确定处理后的尺寸，返回None
+                return base64.b64encode(f.read()).decode("utf-8"), self._get_image_mime_type(image_path), None, None
 
     def _encode_image(self, image_path: str) -> str:
         """将图片编码为base64"""
@@ -117,6 +119,9 @@ class VLMClient:
             image_path: 图片路径或URL
             resize: 是否压缩图片以减少token数量
             max_size: 压缩后的最大边长
+
+        Returns:
+            dict with image content and optionally processed dimensions
         """
         if image_path.startswith(("http://", "https://")):
             return {"type": "image_url", "image_url": {"url": image_path}}
@@ -124,17 +129,27 @@ class VLMClient:
             # 本地文件
             if resize:
                 # 压缩图片以减少token数量
-                base64_data, mime_type = self._resize_image(image_path, max_size)
+                base64_data, mime_type, processed_w, processed_h = self._resize_image(image_path, max_size)
+                result = {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{mime_type};base64,{base64_data}"
+                    }
+                }
+                # 附加处理后的尺寸信息（用于坐标转换）
+                if processed_w and processed_h:
+                    result["processed_dimensions"] = (processed_w, processed_h)
+                return result
             else:
                 mime_type = self._get_image_mime_type(image_path)
                 base64_data = self._encode_image(image_path)
 
-            return {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:{mime_type};base64,{base64_data}"
+                return {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{mime_type};base64,{base64_data}"
+                    }
                 }
-            }
     
     def _get_video_content(self, video_path: str) -> dict:
         """
@@ -246,41 +261,46 @@ class VLMClient:
             )
     
     def chat_with_image(
-        self, 
-        image_path: str, 
+        self,
+        image_path: str,
         prompt: str,
         system_prompt: str = None
-    ) -> str:
+    ) -> dict:
         """
         单图片对话
-        
+
         Args:
             image_path: 图片路径或URL
             prompt: 用户提示
             system_prompt: 系统提示
-        
+
         Returns:
-            模型回复文本
+            dict with:
+                - content: 模型回复文本
+                - processed_dimensions: 处理后的图片尺寸 (width, height)，用于坐标转换
         """
         messages = []
-        
+
         if system_prompt:
             messages.append({
                 "role": "system",
                 "content": system_prompt
             })
-        
+
         # 构建用户消息
+        image_content = self._get_image_content(image_path)
+        processed_dimensions = image_content.pop("processed_dimensions", None)
+
         user_content = [
-            self._get_image_content(image_path),
+            image_content,
             {"type": "text", "text": prompt}
         ]
-        
+
         messages.append({
             "role": "user",
             "content": user_content
         })
-        
+
         # 调用API
         response = self.client.chat.completions.create(
             model=self.model,
@@ -288,8 +308,11 @@ class VLMClient:
             max_tokens=VLM_MAX_TOKENS,
             temperature=VLM_TEMPERATURE
         )
-        
-        return response.choices[0].message.content
+
+        return {
+            "content": response.choices[0].message.content,
+            "processed_dimensions": processed_dimensions
+        }
     
     def chat_with_video(
         self,

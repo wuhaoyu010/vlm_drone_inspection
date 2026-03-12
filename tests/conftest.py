@@ -16,7 +16,10 @@ sys.path.insert(0, str(project_root))
 def mock_vlm_client():
     """Mock VLM client for testing"""
     client = MagicMock()
-    client.chat_with_image = MagicMock(return_value='{"l1_result": [], "l2_result": "test", "l3_result": "test"}')
+    client.chat_with_image = MagicMock(return_value={
+        "content": '{"l1_result": [], "l2_result": "test", "l3_result": "test"}',
+        "processed_dimensions": (640, 480)
+    })
     return client
 
 
@@ -24,7 +27,8 @@ def mock_vlm_client():
 def mock_vlm_client_with_detection():
     """Mock VLM client with detection results"""
     client = MagicMock()
-    client.chat_with_image = MagicMock(return_value='''```json
+    client.chat_with_image = MagicMock(return_value={
+        "content": '''```json
 {
     "l1_result": [
         {"bbox": [100, 100, 200, 200], "category": "抛洒物"}
@@ -32,7 +36,9 @@ def mock_vlm_client_with_detection():
     "l2_result": "检测到1个抛洒物",
     "l3_result": "风险等级：P1"
 }
-```''')
+```''',
+        "processed_dimensions": (640, 480)
+    })
     return client
 
 
@@ -40,7 +46,8 @@ def mock_vlm_client_with_detection():
 def mock_vlm_client_violation():
     """Mock VLM client with violation detection"""
     client = MagicMock()
-    client.chat_with_image = MagicMock(return_value='''```json
+    client.chat_with_image = MagicMock(return_value={
+        "content": '''```json
 {
     "l1_result": {
         "has_violation": true,
@@ -59,7 +66,16 @@ def mock_vlm_client_violation():
     "l2_result": "检测到1辆违停车辆",
     "l3_result": "风险等级：P1"
 }
-```''')
+```''',
+        "processed_dimensions": (640, 480)
+    })
+    return client
+
+
+@pytest.fixture
+def mock_vlm_client_for_sahi():
+    """Mock VLM client for SAHI tests"""
+    client = MagicMock()
     return client
 
 

@@ -13,17 +13,28 @@ from typing import Dict, Any, List, Optional, Tuple
 QWEN_NORMALIZED_RANGE = 1000
 
 
-def denormalize_bbox(bbox: List, img_width: int, img_height: int) -> List[int]:
+def denormalize_bbox(
+    bbox: List,
+    img_width: int,
+    img_height: int,
+    processed_width: int = None,
+    processed_height: int = None
+) -> List[int]:
     """
     将归一化坐标[0,1000]转换为实际图片坐标
 
     Qwen3-VL模型输出的bbox坐标是归一化的[0,1000]格式，
     需要转换为实际图片像素坐标。
 
+    重要：如果图片在发送到模型前被缩放过，需要提供processed_width/processed_height
+    以确保坐标转换正确。
+
     Args:
         bbox: 归一化边界框 [x1, y1, x2, y2]，范围[0, 1000]
         img_width: 原始图片宽度
         img_height: 原始图片高度
+        processed_width: 发送到模型时的图片宽度（如果有缩放）
+        processed_height: 发送到模型时的图片高度（如果有缩放）
 
     Returns:
         实际像素坐标 [x1, y1, x2, y2]
@@ -35,15 +46,30 @@ def denormalize_bbox(bbox: List, img_width: int, img_height: int) -> List[int]:
         x1, y1, x2, y2 = [float(v) for v in bbox]
 
         # 检测是否为归一化坐标（值在0-1000范围内）
-        # 如果坐标值大于图片尺寸，说明不是归一化坐标
         is_normalized = all(v <= QWEN_NORMALIZED_RANGE * 1.1 for v in [x1, y1, x2, y2])
 
         if is_normalized:
-            # 归一化坐标转实际坐标
-            x1 = int(x1 * img_width / QWEN_NORMALIZED_RANGE)
-            y1 = int(y1 * img_height / QWEN_NORMALIZED_RANGE)
-            x2 = int(x2 * img_width / QWEN_NORMALIZED_RANGE)
-            y2 = int(y2 * img_height / QWEN_NORMALIZED_RANGE)
+            # 如果提供了处理后的尺寸，先转换到处理后的像素坐标
+            if processed_width and processed_height:
+                # 模型看到的是缩放后的图片，先转换到缩放后的像素坐标
+                x1_px = x1 * processed_width / QWEN_NORMALIZED_RANGE
+                y1_px = y1 * processed_height / QWEN_NORMALIZED_RANGE
+                x2_px = x2 * processed_width / QWEN_NORMALIZED_RANGE
+                y2_px = y2 * processed_height / QWEN_NORMALIZED_RANGE
+
+                # 然后转换回原始图片坐标
+                scale_x = img_width / processed_width
+                scale_y = img_height / processed_height
+                x1 = int(x1_px * scale_x)
+                y1 = int(y1_px * scale_y)
+                x2 = int(x2_px * scale_x)
+                y2 = int(y2_px * scale_y)
+            else:
+                # 没有缩放，直接转换
+                x1 = int(x1 * img_width / QWEN_NORMALIZED_RANGE)
+                y1 = int(y1 * img_height / QWEN_NORMALIZED_RANGE)
+                x2 = int(x2 * img_width / QWEN_NORMALIZED_RANGE)
+                y2 = int(y2 * img_height / QWEN_NORMALIZED_RANGE)
         else:
             # 已经是实际坐标，直接取整
             x1, y1, x2, y2 = [int(v) for v in [x1, y1, x2, y2]]

@@ -12,13 +12,31 @@ models:
 
   # Task2: 车辆违停检测
   task2:
-    model_path: "yolov8n.pt" # YOLO模型路径（yolov8n/yolov8s/yolo26n/yolo26x）
-    conf_threshold: 0.15
-    iou_threshold: 0.7
-    min_track_frames: 10     # 最小追踪帧数（判断违停阈值）
-    trajectory_length: 30    # 轨迹显示长度（帧数）
-    tracker: "bytetrack.yaml" # 追踪器：bytetrack.yaml / botsort.yaml
-    device: "auto"           # auto(自动检测)/cuda(强制GPU)/cpu(强制CPU)
+    model_path: "yolov8n.pt"   # YOLO模型路径（yolov8n/yolov8s/yolo26n/yolo26x）
+    conf_threshold: 0.5         # 检测置信度阈值
+    iou_threshold: 0.7          # IOU阈值
+    min_track_frames: 10        # 最小静止帧数（判断违停阈值）
+    trajectory_length: 50       # 轨迹显示长度（帧数）
+    tracker: "botsort.yaml"     # 追踪器：bytetrack.yaml / botsort.yaml
+    device: "auto"              # auto(自动检测)/cuda(强制GPU)/cpu(强制CPU)
+    # 性能优化参数
+    detect_interval: 5          # 关键帧检测间隔（每N帧检测一次，减少检测次数）
+    downscale_ratio: 0.75       # 帧缩放比例（0.75=缩小到75%，提升性能）
+    # 静止判断参数
+    static_time_window: 15      # 静止判断时间窗口（帧数）
+    static_dist_threshold: 15.0 # 静止判断位移阈值（像素，补偿后轨迹位移小于此值为静止）
+    use_optical_flow: true      # 是否启用光流法镜头运动补偿（适用于无人机/航拍视角）
+    # SAHI小目标检测参数
+    use_sahi: true              # 是否启用SAHI切片检测（提升小目标检测精度）
+    sahi_slice_width: 640       # 切片宽度（像素）
+    sahi_slice_height: 640      # 切片高度（像素）
+    sahi_overlap_width_ratio: 0.2   # 切片水平重叠比例（0.2=20%重叠，避免目标被截断）
+    sahi_overlap_height_ratio: 0.2  # 切片垂直重叠比例
+    sahi_postprocess_type: "NMM"    # 后处理类型：NMM(NMS变体，更精确)/NMS(标准NMS，更快)
+    # RAG知识库参数（增强L2/L3专业性）
+    use_rag: true               # 是否启用RAG知识库检索
+    knowledge_dir: "./knowledge_base"  # 知识库文档目录（存放PDF/TXT/MD文件）
+    embedding_model_path: "./bge-small-zh-v1.5"  # 嵌入模型路径（BGE中文模型）
 
   # Task3: 路面病害检测（预留）
   task3:
