@@ -2,6 +2,7 @@
 Task 3: 路面与护栏病害检测处理器
 Windows兼容版本
 """
+
 import os
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ def get_image_size(image_path: str):
     """获取图片尺寸"""
     try:
         from PIL import Image
+
         with Image.open(image_path) as img:
             return img.size  # (width, height)
     except Exception:
@@ -29,14 +31,11 @@ class Task3Processor(BaseProcessor):
     """路面与护栏病害检测处理器"""
 
     # 场景ID到类别的映射
-    SCENE_CATEGORY_MAP = {
-        2: "裂缝",
-        3: "坑洼",
-        4: "积水",
-        5: "护栏破损"
-    }
+    SCENE_CATEGORY_MAP = {2: "裂缝", 3: "坑洼", 4: "积水", 5: "护栏破损"}
 
-    def process(self, input_data: str, scene_id: int = None, output_dir: Optional[str] = None) -> Dict[str, Any]:
+    def process(
+        self, input_data: str, scene_id: int = None, output_dir: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         处理路面与护栏病害检测任务
 
@@ -55,14 +54,14 @@ class Task3Processor(BaseProcessor):
         prompt = TASK3_USER_PROMPT
         if scene_id is not None:
             category = self.SCENE_CATEGORY_MAP.get(scene_id, "病害")
-            prompt = prompt.replace("检测路面病害和护栏损坏",
-                                   f"重点检测{category}问题，同时也可以检测其他类型病害")
+            prompt = prompt.replace(
+                "检测路面病害和护栏损坏",
+                f"重点检测{category}问题，同时也可以检测其他类型病害",
+            )
 
         # 调用VLM
         response = self.vlm_client.chat_with_image(
-            image_path=input_data,
-            prompt=prompt,
-            system_prompt=TASK3_SYSTEM_PROMPT
+            image_path=input_data, prompt=prompt, system_prompt=TASK3_SYSTEM_PROMPT
         )
 
         # 解析响应
@@ -92,7 +91,9 @@ class Task3Processor(BaseProcessor):
         if output_dir and result.get("l1_result"):
             try:
                 input_path = Path(input_data)
-                annotated_path = os.path.join(output_dir, f"{input_path.stem}_annotated{input_path.suffix}")
+                annotated_path = os.path.join(
+                    output_dir, f"{input_path.stem}_annotated{input_path.suffix}"
+                )
                 draw_bboxes_on_image(input_data, result["l1_result"], annotated_path)
                 result["annotated_image"] = annotated_path
             except Exception as e:
@@ -108,7 +109,11 @@ class Task3Processor(BaseProcessor):
 
         if "裂缝" in category_lower or "裂痕" in category_lower:
             return 2
-        elif "坑洼" in category_lower or "坑洞" in category_lower or "凹陷" in category_lower:
+        elif (
+            "坑洼" in category_lower
+            or "坑洞" in category_lower
+            or "凹陷" in category_lower
+        ):
             return 3
         elif "积水" in category_lower or "水" in category_lower:
             return 4

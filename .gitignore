@@ -64,3 +64,4 @@ output/
 ~$人工智能赛道问题.xlsx
 bytetrack_x_mot20.tar
 bytetrack_model/
+*.pt

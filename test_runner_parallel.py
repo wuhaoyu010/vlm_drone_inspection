@@ -138,14 +138,7 @@ def process_file_with_vlm(
 
     try:
         if is_video_file(file_path):
-            result = processor.process(file_path, scene_id)
-            if result.get("l1_result", {}).get("annotated_video"):
-                src_video = result["l1_result"]["annotated_video"]
-                if os.path.exists(src_video):
-                    import shutil
-                    dst_video = os.path.join(annotated_dir, f"{input_path.stem}_annotated.mp4")
-                    shutil.copy(src_video, dst_video)
-                    result["l1_result"]["annotated_video"] = dst_video
+            result = processor.process(file_path, scene_id, annotated_dir)
         else:
             result = processor.process(file_path, scene_id, annotated_dir)
 
@@ -326,6 +319,20 @@ def run_parallel_tests(
     return stats
 
 
+def clear_output_dir(output_dir: str):
+    """清空输出目录"""
+    import shutil
+    if os.path.exists(output_dir):
+        print(f"清空输出目录: {output_dir}")
+        for item in os.listdir(output_dir):
+            item_path = os.path.join(output_dir, item)
+            if os.path.isdir(item_path):
+                shutil.rmtree(item_path)
+            else:
+                os.remove(item_path)
+    os.makedirs(output_dir, exist_ok=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description="高速公路病害检测并行测试脚本")
     parser.add_argument(
@@ -341,8 +348,8 @@ def main():
     parser.add_argument(
         '--workers', '-w',
         type=int,
-        default=None,
-        help='最大并行worker数 (默认等于VLM服务数)'
+        default=2,  # 默认2个并行worker，RT-DETR+ByteTrack内存占用较大
+        help='最大并行worker数 (默认2)'
     )
     parser.add_argument(
         '--limit', '-l',
@@ -358,8 +365,8 @@ def main():
         print(f"错误: 输入目录不存在: {args.input}")
         sys.exit(1)
 
-    # 创建输出目录
-    os.makedirs(args.output, exist_ok=True)
+    # 清空并创建输出目录
+    clear_output_dir(args.output)
 
     # 加载VLM服务配置
     from config import config
