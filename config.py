@@ -78,7 +78,8 @@ class Config:
                 5: "护栏破损",
                 6: "边坡滑坡",
                 7: "排水沟积水",
-                8: "排水沟破损"
+                8: "排水沟破损",
+                9: "标志牌异常"
             },
             "logging": {
                 "level": "INFO",
@@ -159,6 +160,7 @@ VLM_SERVICES = config.vlms
 
 SCENE_MAPPING = config.scenes
 IOU_THRESHOLD = config.detection.get("iou_threshold", 0.5)
+VLM_CONFIDENCE_THRESHOLD = config.detection.get("vlm_confidence_threshold", 0.5)
 
 # Task到scene_id的映射
 TASK_SCENE_MAP = {
@@ -167,3 +169,4 @@ TASK_SCENE_MAP = {
     3: [2, 3, 4, 5], # Task3: 路面裂缝/坑洼/积水/护栏破损
     4: [6, 7, 8]     # Task4: 边坡滑坡/排水沟积水/排水沟破损
 }
+

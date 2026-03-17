@@ -2,31 +2,86 @@
 可视化工具模块 - 用于在图片和视频上绘制检测框
 支持中文路径和中文标签
 """
+
 import os
 import cv2
 import numpy as np
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
+# 项目字体目录
+FONT_DIR = Path(__file__).parent.parent / "fonts"
+
 # 尝试导入PIL用于中文绘制
 try:
     from PIL import Image, ImageDraw, ImageFont
+
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
 
+# 字体下载URL（思源黑体简体中文）
+FONT_DOWNLOAD_URLS = {
+    "SourceHanSansSC-Regular.otf": "https://github.com/adobe-fonts/source-han-sans/raw/release/SubsetOTF/CN/SourceHanSansCN-Regular.otf",
+    "simhei.ttf": "https://raw.githubusercontent.com/StellarCN/scp_zh/master/fonts/SimHei.ttf",
+}
 
-def get_chinese_font(font_size: int = 20):
-    """获取支持中文的字体"""
-    if not PIL_AVAILABLE:
+
+def download_font(font_name: str, font_dir: Path) -> Optional[str]:
+    """下载字体文件"""
+    if font_name not in FONT_DOWNLOAD_URLS:
         return None
 
-    # Windows常用中文字体路径
+    font_path = font_dir / font_name
+    if font_path.exists():
+        return str(font_path)
+
+    try:
+        import urllib.request
+
+        print(f"[FONT] 正在下载字体: {font_name}...")
+        url = FONT_DOWNLOAD_URLS[font_name]
+        font_dir.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(url, str(font_path))
+        print(f"[FONT] 字体下载成功: {font_path}")
+        return str(font_path)
+    except Exception as e:
+        print(f"[FONT] 字体下载失败: {e}")
+        return None
+
+
+def get_chinese_font(font_size: int = 20) -> Optional[Any]:
+    """获取支持中文的字体"""
+    if not PIL_AVAILABLE:
+        print("[WARNING] PIL不可用，无法绘制中文标签")
+        return None
+
+    # 确保字体目录存在
+    FONT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 优先级：项目本地字体 > 系统字体
     font_paths = [
-        "C:/Windows/Fonts/simhei.ttf",      # 黑体
-        "C:/Windows/Fonts/msyh.ttc",        # 微软雅黑
-        "C:/Windows/Fonts/simsun.ttc",      # 宋体
-        "C:/Windows/Fonts/simkai.ttf",      # 楷体
+        # 项目本地字体目录（优先）
+        str(FONT_DIR / "SimHei.ttf"),
+        # Windows 字体
+        "C:/Windows/Fonts/simhei.ttf",
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simsun.ttc",
+        "C:/Windows/Fonts/simkai.ttf",
+        # Linux 字体
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/arphic/uming.ttc",
+        "/usr/share/fonts/truetype/arphic/ukai.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+        # macOS 字体
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/STHeiti Light.ttc",
+        "/Library/Fonts/Arial Unicode.ttf",
     ]
 
     for font_path in font_paths:
@@ -36,7 +91,19 @@ def get_chinese_font(font_size: int = 20):
             except Exception:
                 continue
 
-    # 使用默认字体
+    # 尝试自动下载字体
+    for font_name in ["SimHei.ttf", "SourceHanSansSC-Regular.otf"]:
+        downloaded = download_font(font_name, FONT_DIR)
+        if downloaded:
+            try:
+                return ImageFont.truetype(downloaded, font_size)
+            except Exception:
+                continue
+
+    # 使用默认字体（不支持中文）
+    print("[WARNING] 未找到中文字体，标签可能显示为乱码")
+    print(f"[WARNING] 请手动下载字体到: {FONT_DIR}")
+    print("[WARNING] 下载地址: https://github.com/adobe-fonts/source-han-sans/releases")
     try:
         return ImageFont.load_default()
     except Exception:
@@ -49,7 +116,7 @@ def draw_chinese_text_pil(
     position: tuple,
     font_size: int = 20,
     color: tuple = (255, 255, 255),
-    bg_color: tuple = None
+    bg_color: tuple = None,
 ) -> np.ndarray:
     """
     使用PIL在OpenCV图像上绘制中文文本
@@ -67,15 +134,17 @@ def draw_chinese_text_pil(
     """
     if not PIL_AVAILABLE:
         # PIL不可用时回退到OpenCV（中文会显示为问号）
-        cv2.putText(image, text, position, cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6, color, 1, cv2.LINE_AA)
+        cv2.putText(
+            image, text, position, cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1, cv2.LINE_AA
+        )
         return image
 
     # 获取字体
     font = get_chinese_font(font_size)
     if font is None:
-        cv2.putText(image, text, position, cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6, color, 1, cv2.LINE_AA)
+        cv2.putText(
+            image, text, position, cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1, cv2.LINE_AA
+        )
         return image
 
     # 转换为PIL图像 (RGB格式)
@@ -94,10 +163,7 @@ def draw_chinese_text_pil(
     if bg_color is not None:
         # 转换BGR到RGB
         bg_rgb = (bg_color[2], bg_color[1], bg_color[0])
-        draw.rectangle(
-            [x, y - text_height - 2, x + text_width + 2, y + 2],
-            fill=bg_rgb
-        )
+        draw.rectangle([x, y - text_height - 2, x + text_width + 2, y + 2], fill=bg_rgb)
 
     # 转换BGR颜色到RGB
     text_rgb = (color[2], color[1], color[0])
@@ -114,7 +180,7 @@ def draw_chinese_text_pil(
 def imread_chinese(path: str) -> np.ndarray:
     """读取图片（支持中文路径）"""
     # 使用numpy读取文件，然后用cv2解码
-    with open(path, 'rb') as f:
+    with open(path, "rb") as f:
         data = f.read()
     image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     return image
@@ -126,7 +192,7 @@ def imwrite_chinese(path: str, image: np.ndarray) -> bool:
     ext = os.path.splitext(path)[1]
     success, encoded = cv2.imencode(ext, image)
     if success:
-        with open(path, 'wb') as f:
+        with open(path, "wb") as f:
             f.write(encoded.tobytes())
         return True
     return False
@@ -134,16 +200,16 @@ def imwrite_chinese(path: str, image: np.ndarray) -> bool:
 
 # 颜色配置 (BGR格式)
 COLORS = {
-    'default': (0, 0, 255),      # 红色
-    '抛洒物': (0, 165, 255),     # 橙色
-    '裂缝': (255, 0, 0),         # 蓝色
-    '坑洼': (0, 255, 255),       # 黄色
-    '积水': (255, 255, 0),       # 青色
-    '护栏破损': (255, 0, 255),   # 紫色
-    '边坡滑坡': (0, 255, 0),     # 绿色
-    '排水沟积水': (255, 255, 0), # 青色
-    '排水沟破损': (0, 165, 255), # 橙色
-    '违停': (0, 0, 255),         # 红色
+    "default": (0, 0, 255),  # 红色
+    "抛洒物": (0, 165, 255),  # 橙色
+    "裂缝": (255, 0, 0),  # 蓝色
+    "坑洼": (0, 255, 255),  # 黄色
+    "积水": (255, 255, 0),  # 青色
+    "护栏破损": (255, 0, 255),  # 紫色
+    "边坡滑坡": (0, 255, 0),  # 绿色
+    "排水沟积水": (255, 255, 0),  # 青色
+    "排水沟破损": (0, 165, 255),  # 橙色
+    "违停": (0, 0, 255),  # 红色
 }
 
 
@@ -153,7 +219,7 @@ def get_color_for_category(category: str) -> tuple:
     for key, color in COLORS.items():
         if key in category_lower:
             return color
-    return COLORS['default']
+    return COLORS["default"]
 
 
 def draw_bboxes_on_image(
@@ -161,7 +227,7 @@ def draw_bboxes_on_image(
     detections: List[Dict[str, Any]],
     output_path: str,
     line_thickness: int = 2,
-    font_scale: float = 0.6
+    font_scale: float = 0.6,
 ) -> str:
     """
     在图片上绘制检测框（支持中文标签）
@@ -220,7 +286,7 @@ def draw_bboxes_on_image(
                 (x1, y1),
                 font_size=font_size,
                 color=(255, 255, 255),
-                bg_color=color
+                bg_color=color,
             )
 
         except (ValueError, TypeError) as e:
@@ -243,7 +309,7 @@ def draw_bboxes_on_video(
     detections: List[Dict[str, Any]],
     output_path: str,
     line_thickness: int = 2,
-    font_scale: float = 0.6
+    font_scale: float = 0.6,
 ) -> str:
     """
     在视频上绘制检测框（支持中文标签和精确帧级绘制）
@@ -274,7 +340,7 @@ def draw_bboxes_on_video(
         os.makedirs(output_dir, exist_ok=True)
 
     # Windows兼容的编码器
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
     # 构建帧到检测结果的映射（精确匹配）
@@ -335,7 +401,7 @@ def draw_bboxes_on_video(
                     (x1, y1),
                     font_size=font_size,
                     color=(255, 255, 255),
-                    bg_color=(0, 0, 255)
+                    bg_color=(0, 0, 255),
                 )
 
             except (ValueError, TypeError, KeyError) as e:
@@ -351,9 +417,7 @@ def draw_bboxes_on_video(
 
 
 def draw_detections_on_image(
-    image_path: str,
-    l1_result: List[Dict[str, Any]],
-    output_path: str
+    image_path: str, l1_result: List[Dict[str, Any]], output_path: str
 ) -> str:
     """
     根据L1结果在图片上绘制检测框（便捷函数）
@@ -374,10 +438,12 @@ def draw_detections_on_image(
         # Task 2格式
         if "violations" in l1_result:
             for v in l1_result.get("violations", []):
-                detections.append({
-                    "bbox": v.get("bbox", []),
-                    "category": v.get("vehicle_type", "违停车辆")
-                })
+                detections.append(
+                    {
+                        "bbox": v.get("bbox", []),
+                        "category": v.get("vehicle_type", "违停车辆"),
+                    }
+                )
         else:
             detections = [l1_result]
 

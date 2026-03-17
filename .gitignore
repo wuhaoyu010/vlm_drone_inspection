@@ -65,3 +65,9 @@ output/
 bytetrack_x_mot20.tar
 bytetrack_model/
 *.pt
+.claude/
+bge-small-zh-v1.5/
+rag_cache/
+*.zip
+人工智能比赛少量带标注样本/
+docker_file/

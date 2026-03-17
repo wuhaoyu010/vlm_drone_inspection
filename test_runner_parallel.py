@@ -21,17 +21,20 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import threading
+import signal
+import atexit
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent))
+
+# 全局变量用于跟踪子进程
+_active_pids = set()
 
 
 # 目录到scene_id映射
 TASK_SCENE_MAP = {
     'Task_1': [0],
     'Task_2': [1],
-    'Task_2-1': [1],
     'Task_3': [2, 3, 4, 5],
     'Task_3/路面裂缝': [2],
     'Task_3/路面坑洼': [3],
@@ -41,7 +44,7 @@ TASK_SCENE_MAP = {
     'Task_4/边坡异常': [6],
     'Task_4/排水沟积水': [7],
     'Task_4/排水沟破损': [8],
-    'Task_4/标志牌异常': [8],
+    'Task_4/标志牌异常': [9],
     # 子目录独立映射（用于 -t Task_X 参数时）
     '路面裂缝': [2],
     '路面坑洼': [3],
@@ -50,7 +53,28 @@ TASK_SCENE_MAP = {
     '边坡异常': [6],
     '排水沟积水': [7],
     '排水沟破损': [8],
-    '标志牌异常': [8],
+    '标志牌异常': [9],
+}
+
+# 文件名关键字到scene_id映射（用于文件名包含中文关键字的情况）
+FILENAME_KEYWORD_MAP = {
+    '抛洒物': 0,      # Task_1
+    '违停': 1,        # Task_2
+    '路面裂缝': 2,    # Task_3
+    '裂缝': 2,
+    '路面坑洼': 3,    # Task_3
+    '坑洼': 3,
+    '路面积水': 4,    # Task_3
+    '积水': 4,
+    '护栏破损': 5,    # Task_3
+    '护栏': 5,
+    '边坡异常': 6,    # Task_4
+    '边坡': 6,
+    '滑坡': 6,
+    '排水沟积水': 7,  # Task_4
+    '排水沟破损': 8,  # Task_4
+    '排水沟': 8,
+    '标志牌': 9,      # Task_4
 }
 
 # 图片/视频扩展名
@@ -60,11 +84,19 @@ VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
 
 def get_scene_id(relative_path: str) -> Optional[int]:
     """根据相对路径确定scene_id"""
+    # 尝试匹配目录路径
     for path_pattern, scene_ids in TASK_SCENE_MAP.items():
         if path_pattern in relative_path:
             if len(scene_ids) == 1:
                 return scene_ids[0]
             return scene_ids[0]
+
+    # 尝试从文件名中匹配中文关键字
+    filename = Path(relative_path).stem
+    for keyword, scene_id in FILENAME_KEYWORD_MAP.items():
+        if keyword in filename:
+            return scene_id
+
     return None
 
 
@@ -137,7 +169,7 @@ def process_file_with_vlm(
         processor = Task2Processor(vlm_client)
     elif scene_id in [2, 3, 4, 5]:
         processor = Task3Processor(vlm_client)
-    elif scene_id in [6, 7, 8]:
+    elif scene_id in [6, 7, 8, 9]:
         processor = Task4Processor(vlm_client)
     else:
         raise ValueError(f"未知的场景ID: {scene_id}")
@@ -416,6 +448,23 @@ def main():
         print(f"  [{i+1}] {vlm.get('name', 'unnamed')}: {vlm.get('base_url')} - {vlm.get('model')}")
     print()
 
+    # 预先初始化RAG知识库（在主进程中构建缓存，避免worker重复构建）
+    print("[主进程] 预初始化RAG知识库...")
+    try:
+        from rag_knowledge import get_knowledge_base, check_rag_availability
+        rag_status = check_rag_availability()
+        if rag_status.get("rag_enabled"):
+            kb = get_knowledge_base()
+            if kb.is_available():
+                print("[主进程] RAG知识库初始化成功，worker进程将从缓存加载")
+            else:
+                print("[主进程] RAG知识库初始化失败，将使用默认知识模板")
+        else:
+            print(f"[主进程] RAG未启用: {rag_status}")
+    except Exception as e:
+        print(f"[主进程] RAG预初始化异常: {e}")
+    print()
+
     # 运行并行测试
     run_parallel_tests(
         args.input,
@@ -427,6 +476,25 @@ def main():
 
 
 if __name__ == "__main__":
+    # 使用spawn模式启动子进程（兼容CUDA）
+    # 注意：spawn模式要求所有代码在 if __name__ == "__main__" 保护下
+    mp.set_start_method('spawn', force=True)
+
+    # 注册信号处理器 - Ctrl+C 优雅退出
+    _shutting_down = [False]  # 使用列表实现可变闭包
+
+    def signal_handler(signum, frame):
+        if _shutting_down[0]:
+            return  # 防止重复处理
+        _shutting_down[0] = True
+
+        print("\n[主进程] 收到终止信号，正在退出...")
+        # 直接退出，spawn模式下操作系统会回收子进程
+        os._exit(1)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
     # Windows多进程支持
     mp.freeze_support()
     main()

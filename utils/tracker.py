@@ -2,6 +2,7 @@
 目标跟踪模块 - 实现视频中的目标跟踪
 支持基于IoU匹配的简单跟踪和OpenCV内置追踪器
 """
+
 import cv2
 import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
@@ -12,6 +13,7 @@ from collections import defaultdict
 @dataclass
 class TrackedObject:
     """跟踪目标"""
+
     track_id: int
     bbox: List[int]  # [x1, y1, x2, y2]
     category: str
@@ -126,7 +128,7 @@ class SimpleTracker:
                     track_id=self.next_id,
                     bbox=det_bbox,
                     category=det_category,
-                    last_frame=frame_id
+                    last_frame=frame_id,
                 )
                 self.tracks[self.next_id] = new_track
                 self.next_id += 1
@@ -134,13 +136,15 @@ class SimpleTracker:
         # 返回所有活跃轨迹
         results = []
         for track_id, track in self.tracks.items():
-            results.append({
-                "track_id": track.track_id,
-                "bbox": track.bbox,
-                "category": track.category,
-                "last_frame": track.last_frame,
-                "lost_frames": track.lost_frames
-            })
+            results.append(
+                {
+                    "track_id": track.track_id,
+                    "bbox": track.bbox,
+                    "category": track.category,
+                    "last_frame": track.last_frame,
+                    "lost_frames": track.lost_frames,
+                }
+            )
 
         return results
 
@@ -215,10 +219,7 @@ class OpenCVTracker:
             tracker.init(frame, (x, y, w, h))
 
             self.trackers[self.next_id] = tracker
-            self.track_info[self.next_id] = {
-                "category": category,
-                "bbox": bbox
-            }
+            self.track_info[self.next_id] = {"category": category, "bbox": bbox}
             self.next_id += 1
 
     def update(self, frame: np.ndarray) -> List[Dict]:
@@ -244,11 +245,13 @@ class OpenCVTracker:
 
                 self.track_info[track_id]["bbox"] = det_bbox
 
-                results.append({
-                    "track_id": track_id,
-                    "bbox": det_bbox,
-                    "category": self.track_info[track_id]["category"]
-                })
+                results.append(
+                    {
+                        "track_id": track_id,
+                        "bbox": det_bbox,
+                        "category": self.track_info[track_id]["category"],
+                    }
+                )
             else:
                 tracks_to_remove.append(track_id)
 
@@ -272,16 +275,11 @@ def interpolate_bbox(bbox1: List[int], bbox2: List[int], t: float) -> List[int]:
     Returns:
         插值后的框
     """
-    return [
-        int(bbox1[i] + (bbox2[i] - bbox1[i]) * t)
-        for i in range(4)
-    ]
+    return [int(bbox1[i] + (bbox2[i] - bbox1[i]) * t) for i in range(4)]
 
 
 def smooth_trajectory(
-    detections: List[Dict],
-    fps: int,
-    smoothing_window: int = 5
+    detections: List[Dict], fps: int, smoothing_window: int = 5
 ) -> List[Dict]:
     """
     平滑轨迹，填充帧间空白
@@ -326,14 +324,16 @@ def smooth_trajectory(
                     interp_bbox = interpolate_bbox(
                         current.get("bbox", [0, 0, 100, 100]),
                         next_det.get("bbox", [0, 0, 100, 100]),
-                        t
+                        t,
                     )
-                    all_interpolated.append({
-                        "frame_id": current_frame + j,
-                        "bbox": interp_bbox,
-                        "category": category,
-                        "interpolated": True
-                    })
+                    all_interpolated.append(
+                        {
+                            "frame_id": current_frame + j,
+                            "bbox": interp_bbox,
+                            "category": category,
+                            "interpolated": True,
+                        }
+                    )
 
         # 添加最后一个检测
         all_interpolated.append(dets[-1])

@@ -55,6 +55,27 @@ TASK_SCENE_MAP = {
     '标志牌异常': [8],
 }
 
+# 文件名关键字到scene_id映射（用于文件名包含中文关键字的情况）
+FILENAME_KEYWORD_MAP = {
+    '抛洒物': 0,      # Task_1
+    '违停': 1,        # Task_2
+    '路面裂缝': 2,    # Task_3
+    '裂缝': 2,
+    '路面坑洼': 3,    # Task_3
+    '坑洼': 3,
+    '路面积水': 4,    # Task_3
+    '积水': 4,
+    '护栏破损': 5,    # Task_3
+    '护栏': 5,
+    '边坡异常': 6,    # Task_4
+    '边坡': 6,
+    '滑坡': 6,
+    '排水沟积水': 7,  # Task_4
+    '排水沟破损': 8,  # Task_4
+    '排水沟': 8,
+    '标志牌': 8,      # Task_4
+}
+
 # 图片/视频扩展名
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
 VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv', '.wmv'}
@@ -70,7 +91,7 @@ def get_scene_id(relative_path: str) -> Optional[int]:
     Returns:
         scene_id 或 None
     """
-    # 尝试精确匹配
+    # 尝试精确匹配目录路径
     for path_pattern, scene_ids in TASK_SCENE_MAP.items():
         if path_pattern in relative_path:
             # 如果只返回一个scene_id，直接使用
@@ -78,6 +99,12 @@ def get_scene_id(relative_path: str) -> Optional[int]:
                 return scene_ids[0]
             # 如果有多个，返回第一个（后续需要用户确认）
             return scene_ids[0]
+
+    # 尝试从文件名中匹配中文关键字
+    filename = Path(relative_path).stem  # 获取不带扩展名的文件名
+    for keyword, scene_id in FILENAME_KEYWORD_MAP.items():
+        if keyword in filename:
+            return scene_id
 
     return None
 

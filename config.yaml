@@ -1,60 +1,86 @@
 detection:
-  confidence_threshold: 0.3
-  iou_threshold: 0.5
+  confidence_threshold: 0.25
+  iou_threshold: 0.45
+  # VLM输出置信度过滤阈值（低于此值的结果将被过滤）
+  vlm_confidence_threshold: 0.1
 
 # 模型配置（各Task使用的模型路径）
 models:
   # Task1: 抛洒物检测（预留）
   task1:
     model_path: ""           # YOLO模型路径，为空则使用VLM
-    conf_threshold: 0.3
-    iou_threshold: 0.5
+    conf_threshold: 0.25
+    iou_threshold: 0.45
+    # 图像切片推理参数（提升小目标检测）
+    use_tiled_inference: true    # 是否启用切片推理
+    tile_size: 640               # 切片尺寸（像素）
+    tile_overlap: 0.2           # 切片重叠比例
+    merge_iou_threshold: 0.001     # 合并检测结果时的IOU阈值
 
   # Task2: 车辆违停检测
   task2:
-    model_path: "yolov8n.pt"   # YOLO模型路径（yolov8n/yolov8s/yolo26n/yolo26x）
-    conf_threshold: 0.5         # 检测置信度阈值
-    iou_threshold: 0.7          # IOU阈值
+    model_path: "P2024112501demo.P2024112501demo-001.at-det-sub-wgsb.m-yolov8det-sub-wgsb+20260317.43.pt"   # YOLO模型路径（yolov8n/yolov8s/yolo26n/yolo26x）
+    conf_threshold: 0.25        # 检测置信度阈值
+    iou_threshold: 0.45         # IOU阈值
+    # 车辆类别配置（类别ID: 类别名称）
+    vehicle_classes:
+      0: wrecker
+      1: police_car
+      2: maintenance_vehicle
+      3: Machineshop
+      4: Truck
+      5: car
+      6: bus
     min_track_frames: 10        # 最小静止帧数（判断违停阈值）
     trajectory_length: 50       # 轨迹显示长度（帧数）
-    tracker: "botsort.yaml"     # 追踪器：bytetrack.yaml / botsort.yaml
+    tracker: "bytetrack.yaml"     # 追踪器：bytetrack.yaml / botsort.yaml
     device: "auto"              # auto(自动检测)/cuda(强制GPU)/cpu(强制CPU)
     # 性能优化参数
     detect_interval: 5          # 关键帧检测间隔（每N帧检测一次，减少检测次数）
-    downscale_ratio: 0.75       # 帧缩放比例（0.75=缩小到75%，提升性能）
+    downscale_ratio: 1          # 帧缩放比例（0.75=缩小到75%，提升性能）
     # 静止判断参数
     static_time_window: 15      # 静止判断时间窗口（帧数）
     static_dist_threshold: 15.0 # 静止判断位移阈值（像素，补偿后轨迹位移小于此值为静止）
     use_optical_flow: true      # 是否启用光流法镜头运动补偿（适用于无人机/航拍视角）
     # SAHI小目标检测参数
-    use_sahi: true              # 是否启用SAHI切片检测（提升小目标检测精度）
-    sahi_slice_width: 640       # 切片宽度（像素）
-    sahi_slice_height: 640      # 切片高度（像素）
-    sahi_overlap_width_ratio: 0.2   # 切片水平重叠比例（0.2=20%重叠，避免目标被截断）
-    sahi_overlap_height_ratio: 0.2  # 切片垂直重叠比例
+    use_sahi: false              # 是否启用SAHI切片检测（提升小目标检测精度）
+    sahi_slice_width: 1280       # 切片宽度（像素）
+    sahi_slice_height: 1280      # 切片高度（像素）
+    sahi_overlap_width_ratio: 0.1   # 切片水平重叠比例（0.2=20%重叠，避免目标被截断）
+    sahi_overlap_height_ratio: 0.1  # 切片垂直重叠比例
     sahi_postprocess_type: "NMM"    # 后处理类型：NMM(NMS变体，更精确)/NMS(标准NMS，更快)
     # RAG知识库参数（增强L2/L3专业性）
     use_rag: true               # 是否启用RAG知识库检索
     knowledge_dir: "./knowledge_base"  # 知识库文档目录（存放PDF/TXT/MD文件）
     embedding_model_path: "./bge-small-zh-v1.5"  # 嵌入模型路径（BGE中文模型）
 
-  # Task3: 路面病害检测（预留）
+  # Task3: 路面病害检测
   task3:
     model_path: ""           # YOLO/分割模型路径，为空则使用VLM
-    conf_threshold: 0.3
-    iou_threshold: 0.5
+    conf_threshold: 0.25
+    iou_threshold: 0.45
+    # 图像切片推理参数（提升小目标检测）
+    use_tiled_inference: true    # 是否启用切片推理（设置超大值如99999可禁用）
+    tile_size: 1280              # 切片尺寸（像素）
+    tile_overlap: 0.1             # 切片重叠比例
+    merge_iou_threshold: 0.001    # 合并检测结果时的IOU阈值
 
-  # Task4: 路外病害检测（预留）
+  # Task4: 路外病害检测
   task4:
     model_path: ""           # YOLO模型路径，为空则使用VLM
-    conf_threshold: 0.3
-    iou_threshold: 0.5
+    conf_threshold: 0.25
+    iou_threshold: 0.45
+    # 图像切片推理参数（提升小目标检测，如远处排水沟积水）
+    use_tiled_inference: false    # 是否启用切片推理
+    tile_size: 1280              # 切片尺寸（像素）
+    tile_overlap: 0.1            # 切片重叠比例
+    merge_iou_threshold: 0.001     # 合并检测结果时的IOU阈值
 
 # 视频处理配置（针对token限制优化）
 video:
   max_frames: 3          # 提取帧数（建议2-4帧，受限于max_model_len）
-  frame_max_size: 512    # 帧图片最大边长（像素）
-  frame_quality: 70      # JPEG编码质量（1-100）
+  frame_max_size: 1920   # 帧图片最大边长（像素）
+  frame_quality: 100     # JPEG编码质量（1-100）
   batch_mode: false      # 是否分批处理（逐帧分析后汇总）
 
 logging:
@@ -70,6 +96,7 @@ scenes:
   6: 边坡滑坡
   7: 排水沟积水
   8: 排水沟破损
+  9: 标志牌异常
 server:
   host: 0.0.0.0
   port: 8000
@@ -110,20 +137,20 @@ vlm:
 #     timeout: 300
 
 vlms:
-  - name: local_vlm_0
-    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
-    base_url: http://10.110.11.203:8010/v1
-    model: Qwen2_5_VL_7B
-    max_tokens: 1024
-    temperature: 0.0
-    timeout: 300
-  - name: local_vlm_1
-    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
-    base_url: http://10.110.11.203:8001/v1
-    model: Qwen2_5_VL_7B
-    max_tokens: 1024
-    temperature: 0.0
-    timeout: 300
+  # - name: local_vlm_0
+  #   api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+  #   base_url: http://10.110.11.203:8010/v1
+  #   model: Qwen2_5_VL_7B
+  #   max_tokens: 1024
+  #   temperature: 0.0
+  #   timeout: 300
+  # - name: local_vlm_1
+  #   api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+  #   base_url: http://10.110.11.203:8001/v1
+  #   model: Qwen2_5_VL_7B
+  #   max_tokens: 1024
+  #   temperature: 0.0
+  #   timeout: 300
   - name: local_vlm_2
     api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
     base_url: http://10.110.11.203:8002/v1
