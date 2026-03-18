@@ -65,9 +65,9 @@ async def startup_event():
     print("\n[1/5] 初始化 VLM 客户端...")
     try:
         get_vlm_client()
-        print("      ✓ VLM 客户端初始化成功")
+        print("      [OK] VLM 客户端初始化成功")
     except Exception as e:
-        print(f"      ✗ VLM 客户端初始化失败: {e}")
+        print(f"      [FAIL] VLM 客户端初始化失败: {e}")
         return
 
     # 2. 初始化 RAG 知识库
@@ -79,13 +79,13 @@ async def startup_event():
         if rag_status.get("rag_enabled"):
             kb = get_knowledge_base()
             if kb.is_available():
-                print("      ✓ RAG 知识库初始化成功")
+                print("      [OK] RAG 知识库初始化成功")
             else:
-                print("      ! RAG 知识库未就绪，将使用默认模板")
+                print("      [WARN] RAG 知识库未就绪，将使用默认模板")
         else:
-            print(f"      ! RAG 未启用")
+            print("      [WARN] RAG 未启用")
     except Exception as e:
-        print(f"      ! RAG 初始化失败: {e}")
+        print(f"      [WARN] RAG 初始化失败: {e}")
 
     # 3. 预热所有处理器（触发模型加载）
     print("\n[3/5] 预热处理器（加载模型）...")
@@ -96,28 +96,28 @@ async def startup_event():
         from processors import Task1Processor
 
         processors[0] = Task1Processor(vlm_client)
-        print("      ✓ Task1 处理器已加载")
+        print("      [OK] Task1 处理器已加载")
 
         # Task2 处理器（YOLO 模型较重，初始化时会自动加载）
         from processors import Task2Processor
 
         processors[1] = Task2Processor(vlm_client)
-        print("      ✓ Task2 处理器已加载（YOLO + ByteTrack）")
+        print("      [OK] Task2 处理器已加载（YOLO + ByteTrack）")
 
         # Task3 处理器
         from processors import Task3Processor
 
         processors[2] = Task3Processor(vlm_client)
-        print("      ✓ Task3 处理器已加载")
+        print("      [OK] Task3 处理器已加载")
 
         # Task4 处理器
         from processors import Task4Processor
 
         processors[3] = Task4Processor(vlm_client)
-        print("      ✓ Task4 处理器已加载")
+        print("      [OK] Task4 处理器已加载")
 
     except Exception as e:
-        print(f"      ✗ 处理器预热失败: {e}")
+        print(f"      [FAIL] 处理器预热失败: {e}")
         import traceback
 
         traceback.print_exc()
@@ -126,9 +126,9 @@ async def startup_event():
     print("\n[4/5] 预热 VLM 连接...")
     try:
         vlm_client.chat("你好", "你是一个助手。")
-        print("      ✓ VLM 连接已建立")
+        print("      [OK] VLM 连接已建立")
     except Exception as e:
-        print(f"      ! VLM 连接预热失败: {e}")
+        print(f"      [WARN] VLM 连接预热失败: {e}")
 
     # 5. 显示内存使用情况
     print("\n[5/5] 检查系统状态...")
@@ -255,7 +255,7 @@ async def detect_by_path(
 
 
 # 兼容比赛要求的接口格式
-@app.post("/api/v1")
+@app.post("/api/v1/")
 async def detect_compatible(
     image_or_video: UploadFile = File(..., description="上传的图片或视频文件"),
     scene_id: int = Form(..., description="场景ID"),

@@ -38,10 +38,15 @@ models:
     # 性能优化参数
     detect_interval: 5          # 关键帧检测间隔（每N帧检测一次，减少检测次数）
     downscale_ratio: 1          # 帧缩放比例（0.75=缩小到75%，提升性能）
-    # 静止判断参数
-    static_time_window: 15      # 静止判断时间窗口（帧数）
-    static_dist_threshold: 15.0 # 静止判断位移阈值（像素，补偿后轨迹位移小于此值为静止）
+    # 静止判断参数（demo_15.py逻辑）
+    static_time_window: 30      # 静止判断时间窗口（帧数）
+    static_dist_threshold: 20.0 # 静止判断位移阈值（像素，补偿后轨迹位移小于此值为静止）
+    static_smooth_frames: 30    # 迟滞帧数（连续静止N帧后才判定为静止，避免误判）
+    static_ratio_threshold: 0.5 # 静止占比阈值（静止帧数>=总帧数*50%才判定为最终静止）
     use_optical_flow: true      # 是否启用光流法镜头运动补偿（适用于无人机/航拍视角）
+    # 静止车辆图片保存配置
+    save_static_images: true    # 是否保存静止车辆标注图片
+    static_img_dir: "./static_cars_imgs"  # 静止车辆图片保存目录
     # SAHI小目标检测参数
     use_sahi: false              # 是否启用SAHI切片检测（提升小目标检测精度）
     sahi_slice_width: 1280       # 切片宽度（像素）
@@ -112,7 +117,7 @@ server:
 # 单VLM配置（默认）
 vlm:
   api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
-  base_url: http://10.110.11.203:8004/v1
+  base_url: http://localhost:8000/v1
   max_tokens: 1024      # 输出token限制（需预留空间给输入图片，max_model_len=6000时建议≤1024）
   model: Qwen2_5_VL_7B
   provider: openai
@@ -151,45 +156,45 @@ vlms:
   #   max_tokens: 1024
   #   temperature: 0.0
   #   timeout: 300
-  - name: local_vlm_2
-    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
-    base_url: http://10.110.11.203:8002/v1
-    model: Qwen2_5_VL_7B
-    max_tokens: 1024
-    temperature: 0.0
-    timeout: 300
-  - name: local_vlm_3
-    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
-    base_url: http://10.110.11.203:8003/v1
-    model: Qwen2_5_VL_7B
-    max_tokens: 1024
-    temperature: 0.0
-    timeout: 300
-  - name: local_vlm_4
-    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
-    base_url: http://10.110.11.203:8004/v1
-    model: Qwen2_5_VL_7B
-    max_tokens: 1024
-    temperature: 0.0
-    timeout: 300
-  - name: local_vlm_5
-    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
-    base_url: http://10.110.11.203:8005/v1
-    model: Qwen2_5_VL_7B
-    max_tokens: 1024
-    temperature: 0.0
-    timeout: 300
-  - name: local_vlm_6
-    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
-    base_url: http://10.110.11.203:8006/v1
-    model: Qwen2_5_VL_7B
-    max_tokens: 1024
-    temperature: 0.0
-    timeout: 300
-  - name: local_vlm_7
-    api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
-    base_url: http://10.110.11.203:8007/v1
-    model: Qwen2_5_VL_7B
-    max_tokens: 1024
-    temperature: 0.0
-    timeout: 300
+  # - name: local_vlm_2
+  #   api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+  #   base_url: http://10.110.11.203:8002/v1
+  #   model: Qwen2_5_VL_7B
+  #   max_tokens: 1024
+  #   temperature: 0.0
+  #   timeout: 300
+  # - name: local_vlm_3
+  #   api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+  #   base_url: http://10.110.11.203:8003/v1
+  #   model: Qwen2_5_VL_7B
+  #   max_tokens: 1024
+  #   temperature: 0.0
+  #   timeout: 300
+  # - name: local_vlm_4
+  #   api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+  #   base_url: http://10.110.11.203:8004/v1
+  #   model: Qwen2_5_VL_7B
+  #   max_tokens: 1024
+  #   temperature: 0.0
+  #   timeout: 300
+  # - name: local_vlm_5
+  #   api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+  #   base_url: http://10.110.11.203:8005/v1
+  #   model: Qwen2_5_VL_7B
+  #   max_tokens: 1024
+  #   temperature: 0.0
+  #   timeout: 300
+  # - name: local_vlm_6
+  #   api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+  #   base_url: http://10.110.11.203:8006/v1
+  #   model: Qwen2_5_VL_7B
+  #   max_tokens: 1024
+  #   temperature: 0.0
+  #   timeout: 300
+  # - name: local_vlm_7
+  #   api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
+  #   base_url: http://10.110.11.203:8007/v1
+  #   model: Qwen2_5_VL_7B
+  #   max_tokens: 1024
+  #   temperature: 0.0
+  #   timeout: 300
