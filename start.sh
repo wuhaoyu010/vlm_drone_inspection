@@ -257,7 +257,7 @@ API_PID=$!
 log_info "API 服务已启动 (PID: $API_PID)"
 
 # 等待 API 服务启动
-sleep 3
+sleep 10
 
 # 检查 API 是否正常
 if curl -s "http://${API_HOST}:${API_PORT}/docs" > /dev/null 2>&1; then

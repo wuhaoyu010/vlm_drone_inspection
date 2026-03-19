@@ -19,8 +19,8 @@ models:
 
   # Task2: 车辆违停检测
   task2:
-    model_path: "P2024112501demo.P2024112501demo-001.at-det-sub-wgsb.m-yolov8det-sub-wgsb+20260317.43.pt"   # YOLO模型路径（yolov8n/yolov8s/yolo26n/yolo26x）
-    conf_threshold: 0.25        # 检测置信度阈值
+    model_path: "P2024112501demo.P2024112501demo-001.at-det-sub-wgsb.m-yolov8det-sub-wgsb+20260318.44.pt"   # YOLO模型路径（yolov8n/yolov8s/yolo26n/yolo26x）
+    conf_threshold: 0.55        # 检测置信度阈值
     iou_threshold: 0.45         # IOU阈值
     # 车辆类别配置（类别ID: 类别名称）
     vehicle_classes:
@@ -117,9 +117,9 @@ server:
 # 单VLM配置（默认）
 vlm:
   api_key: sk-ixdinnwezpnmuucaiarkujmmfpkbjfvqsxxfqupozfvsnpxi
-  base_url: http://localhost:8000/v1
+  base_url: http://localhost:8001/v1
   max_tokens: 1024      # 输出token限制（需预留空间给输入图片，max_model_len=6000时建议≤1024）
-  model: Qwen2_5_VL_7B
+  model: Qwen3_VL_8B
   provider: openai
   temperature: 0.0
   timeout: 300

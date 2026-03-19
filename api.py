@@ -201,6 +201,8 @@ async def detect(
             # 获取处理器并处理
             processor = get_processor(scene_id)
             result = processor.process(temp_file.name, scene_id)
+            if scene_id == 1:
+                return result  # 违停场景直接返回原始结果（兼容比赛要求）
 
             return DetectionResponse(
                 success=True, message="检测完成", scene_id=scene_id, data=result
@@ -240,6 +242,9 @@ async def detect_by_path(
         # 获取处理器并处理
         processor = get_processor(scene_id)
         result = processor.process(file_path, scene_id)
+
+        if scene_id == 1:
+            return result  # 违停场景直接返回原始结果（兼容比赛要求）
 
         return DetectionResponse(
             success=True, message="检测完成", scene_id=scene_id, data=result
@@ -295,6 +300,9 @@ async def detect_compatible(
             # 获取处理器并处理
             processor = get_processor(scene_id)
             result = processor.process(temp_file.name, scene_id)
+
+            if scene_id == 1:
+                return result  # 违停场景直接返回原始结果（兼容比赛要求）
 
             return {
                 "success": True,

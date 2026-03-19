@@ -1324,13 +1324,18 @@ class Task2Processor(BaseProcessor):
             l2_result = []
             l3_result = []
 
-            # 无违停时的默认输出
+            # 无违停时的默认输出（完整结构，通过校验）
             if len(violations) == 0:
                 return {
                     "success": True,
-                    "message": "",
+                    "message": "未检测到违停车辆",
                     "scene_id": scene_id,
-                    "data": [],
+                    "data": [{
+                        "frame_id": 0,
+                        "bboxs": [],
+                        "reasoning": [],
+                        "suggestion": []
+                    }],
                     "video_info": video_info,
                     "annotated_video": output_video
                     if output_video and os.path.exists(output_video)
@@ -1355,7 +1360,12 @@ class Task2Processor(BaseProcessor):
                         "success": True,
                         "message": f"VLM分析后无确认的违停车辆（原始{pre_vlm_count}辆候选全部被过滤，详见控制台日志）",
                         "scene_id": scene_id,
-                        "data": [],
+                        "data": [{
+                            "frame_id": 0,
+                            "bboxs": [],
+                            "reasoning": [],
+                            "suggestion": []
+                        }],
                         "video_info": video_info,
                         "annotated_video": output_video
                         if output_video and os.path.exists(output_video)
@@ -1410,7 +1420,12 @@ class Task2Processor(BaseProcessor):
                 "success": False,
                 "message": str(e),
                 "scene_id": scene_id,
-                "data": [],
+                "data": [{
+                    "frame_id": 0,
+                    "bboxs": [],
+                    "reasoning": [],
+                    "suggestion": []
+                }],
                 "video_info": {"error": str(e)},
                 "annotated_video": "",
             }
