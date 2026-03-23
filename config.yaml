@@ -16,12 +16,16 @@ models:
     tile_size: 640               # 切片尺寸（像素）
     tile_overlap: 0.2           # 切片重叠比例
     merge_iou_threshold: 0.001     # 合并检测结果时的IOU阈值
+    max_workers: 8              # 并发线程数（加速切片推理）
+    use_rag: false              # 是否启用RAG知识库（关闭以加速）
 
   # Task2: 车辆违停检测
   task2:
     model_path: "P2024112501demo.P2024112501demo-001.at-det-sub-wgsb.m-yolov8det-sub-wgsb+20260318.44.pt"   # YOLO模型路径（yolov8n/yolov8s/yolo26n/yolo26x）
     conf_threshold: 0.55        # 检测置信度阈值
     iou_threshold: 0.45         # IOU阈值
+    # VLM过滤开关（关闭后直接使用YOLO追踪结果，加速推理）
+    use_vlm_filter: false       # 是否使用VLM大模型过滤误检
     # 车辆类别配置（类别ID: 类别名称）
     vehicle_classes:
       0: wrecker
@@ -33,10 +37,10 @@ models:
       6: bus
     min_track_frames: 10        # 最小静止帧数（判断违停阈值）
     trajectory_length: 50       # 轨迹显示长度（帧数）
-    tracker: "bytetrack.yaml"     # 追踪器：bytetrack.yaml / botsort.yaml
+    tracker: "botsort.yaml"     # 追踪器：bytetrack.yaml / botsort.yaml
     device: "auto"              # auto(自动检测)/cuda(强制GPU)/cpu(强制CPU)
     # 性能优化参数
-    detect_interval: 5          # 关键帧检测间隔（每N帧检测一次，减少检测次数）
+    detect_interval: 1          # 关键帧检测间隔（每N帧检测一次，减少检测次数）
     downscale_ratio: 1          # 帧缩放比例（0.75=缩小到75%，提升性能）
     # 静止判断参数（demo_15.py逻辑）
     static_time_window: 30      # 静止判断时间窗口（帧数）
@@ -47,15 +51,8 @@ models:
     # 静止车辆图片保存配置
     save_static_images: true    # 是否保存静止车辆标注图片
     static_img_dir: "./static_cars_imgs"  # 静止车辆图片保存目录
-    # SAHI小目标检测参数
-    use_sahi: false              # 是否启用SAHI切片检测（提升小目标检测精度）
-    sahi_slice_width: 1280       # 切片宽度（像素）
-    sahi_slice_height: 1280      # 切片高度（像素）
-    sahi_overlap_width_ratio: 0.1   # 切片水平重叠比例（0.2=20%重叠，避免目标被截断）
-    sahi_overlap_height_ratio: 0.1  # 切片垂直重叠比例
-    sahi_postprocess_type: "NMM"    # 后处理类型：NMM(NMS变体，更精确)/NMS(标准NMS，更快)
     # RAG知识库参数（增强L2/L3专业性）
-    use_rag: true               # 是否启用RAG知识库检索
+    use_rag: false              # 是否启用RAG知识库检索（关闭以加速）
     knowledge_dir: "./knowledge_base"  # 知识库文档目录（存放PDF/TXT/MD文件）
     embedding_model_path: "./bge-small-zh-v1.5"  # 嵌入模型路径（BGE中文模型）
 
@@ -69,6 +66,8 @@ models:
     tile_size: 1280              # 切片尺寸（像素）
     tile_overlap: 0.1             # 切片重叠比例
     merge_iou_threshold: 0.001    # 合并检测结果时的IOU阈值
+    max_workers: 8              # 并发线程数（加速切片推理）
+    use_rag: false              # 是否启用RAG知识库（关闭以加速）
 
   # Task4: 路外病害检测
   task4:
@@ -80,6 +79,8 @@ models:
     tile_size: 1280              # 切片尺寸（像素）
     tile_overlap: 0.1            # 切片重叠比例
     merge_iou_threshold: 0.001     # 合并检测结果时的IOU阈值
+    max_workers: 8              # 并发线程数（加速切片推理）
+    use_rag: false              # 是否启用RAG知识库（关闭以加速）
 
 # 视频处理配置（针对token限制优化）
 video:

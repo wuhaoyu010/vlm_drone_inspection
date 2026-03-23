@@ -1,0 +1,1 @@
+docker buildx build --platform linux/amd64  --provenance=false -t avant-vlm-harbor.avantrobotics.cn/jinyili/jinyili_vllm:amd_v1 --push .

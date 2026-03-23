@@ -73,6 +73,11 @@ def get_task2_config() -> Dict[str, Any]:
         # 新增：静止判定参数（来自demo_15.py）
         "static_smooth_frames": task_config.get("static_smooth_frames", 30),
         "static_ratio_threshold": task_config.get("static_ratio_threshold", 0.5),
+        # VLM过滤开关（关闭后直接使用YOLO追踪结果，加速推理）
+        "use_vlm_filter": task_config.get("use_vlm_filter", True),
+        # 性能优化参数
+        "detect_interval": task_config.get("detect_interval", 1),  # 关键帧检测间隔（1=每帧检测）
+        "downscale_ratio": task_config.get("downscale_ratio", 1.0),  # 帧缩放比例
         # RAG知识库参数
         "use_rag": task_config.get("use_rag", True),
         "knowledge_dir": task_config.get("knowledge_dir", "./knowledge_base"),
@@ -114,24 +119,25 @@ class CameraMotionCompensator:
     """轻量化镜头运动补偿器 - 使用光流法补偿无人机/航拍镜头移动"""
 
     def __init__(self):
-        # 特征点检测参数（优化适配无人机场景，与test_2.py一致）
+        # 特征点检测参数（与demo_15.py一致）
         self.feature_params = dict(
-            maxCorners=200, qualityLevel=0.1, minDistance=5, blockSize=11
+            maxCorners=300, qualityLevel=0.2, minDistance=8, blockSize=9
         )
-        # 光流法参数（与test_2.py一致）
+        # 光流法参数（与demo_15.py一致）
         self.lk_params = dict(
             winSize=(21, 21),
             maxLevel=3,
-            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 15, 0.01),
+            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
         )
         self.old_gray = None
         self.p0 = None
         self.prev_transform = np.eye(3)
 
     def compute_motion(self, frame):
-        """计算镜头运动，返回运动偏移量（与test_2.py一致）"""
-        # 直接使用原始帧计算光流
+        """计算镜头运动，返回运动偏移量（与demo_15.py一致）"""
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # 直方图均衡化（增强对比度，与demo_15.py一致）
+        gray = cv2.equalizeHist(gray)
         motion_x, motion_y = 0, 0
 
         if self.old_gray is None or self.p0 is None or len(self.p0) < 10:
@@ -147,14 +153,17 @@ class CameraMotionCompensator:
             good_new = p1[st == 1]
             good_old = self.p0[st == 1]
             if len(good_new) > 10:
-                transform, _ = cv2.estimateAffine2D(good_old, good_new)
+                # 使用RANSAC估计仿射变换（与demo_15.py一致）
+                transform, _ = cv2.estimateAffine2D(
+                    good_old, good_new, method=cv2.RANSAC, ransacReprojThreshold=2.0
+                )
                 if transform is not None:
                     motion_x = transform[0, 2]
                     motion_y = transform[1, 2]
                     affine_to_hom = np.vstack([transform, [0, 0, 1]])
                     self.prev_transform = affine_to_hom @ self.prev_transform
 
-        # 每帧更新特征点（与test_2.py一致）
+        # 每帧更新特征点
         self.p0 = cv2.goodFeaturesToTrack(gray, mask=None, **self.feature_params)
         self.old_gray = gray.copy()
 
@@ -178,13 +187,13 @@ class CameraMotionCompensator:
 
 
 def calculate_displacement(points: List[Tuple[float, float]]) -> float:
-    """计算轨迹点的最大位移（包围盒对角线，与test_2.py一致）"""
+    """计算轨迹点的平均位移（以第一个点为基准，与demo_15.py一致）"""
     if len(points) < 2:
         return 0.0
-    points = np.array(points)
-    min_x, min_y = np.min(points, axis=0)
-    max_x, max_y = np.max(points, axis=0)
-    return np.sqrt((max_x - min_x)**2 + (max_y - min_y)**2)
+    points = np.array(points, np.float32)
+    base = points[0]
+    dists = np.sqrt(np.sum((points - base) ** 2, axis=1))
+    return np.mean(dists)
 
 
 class VehicleTracker:
@@ -219,6 +228,10 @@ class VehicleTracker:
         # 静止车辆图片保存配置
         self.save_static_images = self.config["save_static_images"]
         self.static_img_dir = self.config["static_img_dir"]
+
+        # 性能优化参数
+        self.detect_interval = self.config["detect_interval"]
+        self.downscale_ratio = self.config["downscale_ratio"]
 
         print(f"[Task2] 加载YOLO模型: {self.model_path}")
         self.model = YOLO(self.model_path)
@@ -323,6 +336,18 @@ class VehicleTracker:
         # 轨迹画布（原始帧尺寸）
         scene_canvas = np.zeros((height, width, 3), dtype=np.uint8)
 
+        # 计算缩放后的尺寸（性能优化）
+        if self.downscale_ratio != 1.0:
+            process_width = int(raw_width * self.downscale_ratio)
+            process_height = int(raw_height * self.downscale_ratio)
+            print(f"[Task2] 帧缩放: {raw_width}x{raw_height} -> {process_width}x{process_height}")
+        else:
+            process_width, process_height = raw_width, raw_height
+
+        # 打印性能优化配置
+        if self.detect_interval > 1:
+            print(f"[Task2] 跳帧检测: 每{self.detect_interval}帧检测一次")
+
         frame_id = 0
         while cap.isOpened():
             ret, frame = cap.read()
@@ -333,17 +358,40 @@ class VehicleTracker:
             if motion_compensator:
                 motion_compensator.compute_motion(frame)
 
-            # 步骤2：执行YOLO追踪（每帧检测，与test_2.py一致）
-            results = self.model.track(
-                frame,
-                persist=True,
-                conf=self.conf_threshold,
-                iou=self.iou_threshold,
-                classes=list(VEHICLE_CLASSES.keys()),
-                verbose=False,
-                tracker=self.tracker,
-                device=self.device,
-            )
+            # 步骤2：帧缩放（性能优化）
+            if self.downscale_ratio != 1.0:
+                process_frame = cv2.resize(frame, (process_width, process_height))
+            else:
+                process_frame = frame
+
+            # 步骤3：执行YOLO追踪（支持跳帧检测）
+            # 跳帧逻辑：每detect_interval帧检测一次，中间帧跳过检测仅追踪
+            need_detect = (frame_id % self.detect_interval == 0)
+
+            if need_detect:
+                # 关键帧：执行检测
+                results = self.model.track(
+                    process_frame,
+                    persist=True,
+                    conf=self.conf_threshold,
+                    iou=self.iou_threshold,
+                    classes=list(VEHICLE_CLASSES.keys()),
+                    verbose=False,
+                    tracker=self.tracker,
+                    device=self.device,
+                )
+            else:
+                # 非关键帧：仅追踪（不执行检测，使用persist的追踪结果）
+                results = self.model.track(
+                    process_frame,
+                    persist=True,
+                    conf=self.conf_threshold,
+                    iou=self.iou_threshold,
+                    classes=list(VEHICLE_CLASSES.keys()),
+                    verbose=False,
+                    tracker=self.tracker,
+                    device=self.device,
+                )
 
             # 步骤4：处理追踪结果
             if (
@@ -368,6 +416,13 @@ class VehicleTracker:
                 frame_tracks = []
                 for i, track_id in enumerate(track_ids):
                     x1, y1, x2, y2 = map(int, xyxy[i])
+
+                    # 坐标还原（如果使用了帧缩放）
+                    if self.downscale_ratio != 1.0:
+                        x1 = int(x1 / self.downscale_ratio)
+                        y1 = int(y1 / self.downscale_ratio)
+                        x2 = int(x2 / self.downscale_ratio)
+                        y2 = int(y2 / self.downscale_ratio)
 
                     # 框平滑（demo_15.py逻辑）
                     box_history[track_id].append((x1, y1, x2, y2))
@@ -774,6 +829,8 @@ class Task2Processor(BaseProcessor):
         self.tracker = None
         self.knowledge_base = None
         self.use_rag = False
+        self.config = get_task2_config()
+        self.use_vlm_filter = self.config.get("use_vlm_filter", True)
 
         # 初始化RAG知识库
         self._init_rag()
@@ -1343,7 +1400,8 @@ class Task2Processor(BaseProcessor):
                 }
 
             # ====================== VLM 整合分析：位置场景判断 + L2/L3 生成 ======================
-            if static_images_info:
+            # 根据 use_vlm_filter 配置决定是否使用 VLM 过滤
+            if self.use_vlm_filter and static_images_info:
                 # 记录VLM分析前的数量（便于统计过滤率）
                 pre_vlm_count = len(violations)
                 print(f"[Task2] 开始VLM整合分析（位置场景 + L2/L3），输入 {pre_vlm_count} 辆静止车辆候选...")
@@ -1374,8 +1432,11 @@ class Task2Processor(BaseProcessor):
                 else:
                     print(f"[Task2] VLM确认: {pre_vlm_count} -> {len(violations)} 辆（过滤{pre_vlm_count - len(violations)}辆）")
             else:
-                # 无静止车辆图片信息，使用模板生成L2/L3
-                print("[Task2] 无VLM图片信息，使用模板生成L2/L3...")
+                # 不使用VLM过滤，直接使用一阶段结果生成L2/L3
+                if not self.use_vlm_filter:
+                    print(f"[Task2] VLM过滤已关闭，直接使用YOLO追踪结果: {len(violations)} 辆")
+                else:
+                    print("[Task2] 无VLM图片信息，使用模板生成L2/L3...")
                 for v in violations:
                     l2_result.append(self._generate_l2_fallback(v))
                     l3_result.append(self._generate_l3_fallback(v))

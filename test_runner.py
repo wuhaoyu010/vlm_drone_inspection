@@ -18,6 +18,7 @@ import sys
 import json
 import argparse
 import time
+import requests
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -138,7 +139,8 @@ def get_processor(scene_id: int):
 def process_file(
     file_path: str,
     scene_id: int,
-    output_dir: str
+    output_dir: str,
+    api_url: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     处理单个文件
@@ -147,6 +149,7 @@ def process_file(
         file_path: 输入文件路径
         scene_id: 场景ID
         output_dir: 输出目录
+        api_url: API地址（如果提供则通过HTTP调用）
 
     Returns:
         处理结果
@@ -162,30 +165,81 @@ def process_file(
     os.makedirs(results_dir, exist_ok=True)
     os.makedirs(annotated_dir, exist_ok=True)
 
-    # 获取处理器
-    processor = get_processor(scene_id)
-
     # 处理文件
     start_time = time.time()
 
     try:
-        if is_video_file(file_path):
-            # 视频处理（Task 2）
-            result = processor.process(file_path, scene_id)
+        if api_url:
+            # 通过 HTTP API 调用
+            with open(file_path, 'rb') as f:
+                files = {'image_or_video': (input_path.name, f)}
+                data = {'scene_id': scene_id}
+                response = requests.post(api_url, files=files, data=data, timeout=300)
 
-            # 确保标注视频路径正确
-            if result.get("l1_result", {}).get("annotated_video"):
-                # 复制标注视频到输出目录
-                src_video = result["l1_result"]["annotated_video"]
-                if os.path.exists(src_video):
+            if response.status_code != 200:
+                raise Exception(f"API调用失败: {response.status_code} - {response.text}")
+
+            result = response.json()
+
+            # 防御性检查：确保result是字典
+            if not isinstance(result, dict):
+                result = {"success": False, "message": f"API返回非字典类型: {type(result)}", "data": result}
+
+            # 处理标注图片（非Task2场景，data是字典）
+            if result.get("success"):
+                data = result.get("data")
+                if isinstance(data, dict) and data.get("annotated_image"):
+                    import base64
+                    annotated_b64 = data["annotated_image"]
+                    # 移除 data:image/png;base64, 前缀
+                    if annotated_b64.startswith("data:"):
+                        annotated_b64 = annotated_b64.split(",", 1)[1]
+                    annotated_data = base64.b64decode(annotated_b64)
+                    annotated_path = os.path.join(annotated_dir, f"{input_path.stem}_annotated.png")
+                    with open(annotated_path, 'wb') as f:
+                        f.write(annotated_data)
+                    result["data"]["annotated_image"] = annotated_path
+
+                # 处理标注视频（Task2场景，annotated_video在顶层）
+                annotated_video = result.get("annotated_video")
+                if annotated_video and os.path.exists(annotated_video):
                     import shutil
                     dst_video = os.path.join(annotated_dir, f"{input_path.stem}_annotated.mp4")
-                    shutil.copy(src_video, dst_video)
-                    result["l1_result"]["annotated_video"] = dst_video
-
+                    shutil.copy(annotated_video, dst_video)
+                    result["annotated_video"] = dst_video
         else:
-            # 图片处理
-            result = processor.process(file_path, scene_id, annotated_dir)
+            # 直接调用处理器
+            processor = get_processor(scene_id)
+
+            if is_video_file(file_path):
+                # 视频处理（Task 2）
+                result = processor.process(file_path, scene_id)
+
+                # 防御性检查：确保result是字典
+                if not isinstance(result, dict):
+                    result = {"success": False, "message": f"处理器返回非字典类型: {type(result)}", "data": result}
+
+                # Task2的标注视频在顶层annotated_video字段
+                annotated_video = result.get("annotated_video")
+                if annotated_video and os.path.exists(annotated_video):
+                    import shutil
+                    dst_video = os.path.join(annotated_dir, f"{input_path.stem}_annotated.mp4")
+                    shutil.copy(annotated_video, dst_video)
+                    result["annotated_video"] = dst_video
+
+            else:
+                # 图片处理
+                result = processor.process(file_path, scene_id, annotated_dir)
+
+                # 防御性检查：确保result是字典
+                if not isinstance(result, dict):
+                    result = {"success": False, "message": f"处理器返回非字典类型: {type(result)}", "data": result}
+
+                # 图片处理的标注图片路径在data.annotated_image（data是字典）
+                data = result.get("data")
+                if isinstance(data, dict) and data.get("annotated_image"):
+                    # 标注图片已在annotated_dir中生成
+                    pass
 
         elapsed_time = time.time() - start_time
 
@@ -239,7 +293,8 @@ def run_tests(
     input_dir: str,
     output_dir: str,
     limit: Optional[int] = None,
-    force_task: Optional[str] = None
+    force_task: Optional[str] = None,
+    api_url: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     运行所有测试
@@ -249,6 +304,7 @@ def run_tests(
         output_dir: 输出目录
         limit: 限制处理的文件数量（用于测试）
         force_task: 强制指定任务名称（如 Task_1）
+        api_url: API地址（如果提供则通过HTTP调用）
 
     Returns:
         测试统计信息
@@ -285,6 +341,10 @@ def run_tests(
     print(f"开始批量测试: {len(all_files)} 个文件")
     print(f"输入目录: {input_dir}")
     print(f"输出目录: {output_dir}")
+    if api_url:
+        print(f"调用模式: HTTP API ({api_url})")
+    else:
+        print(f"调用模式: 直接调用处理器")
     print(f"{'='*60}\n")
 
     # 处理每个文件
@@ -313,7 +373,7 @@ def run_tests(
         print(f"[{i}/{len(all_files)}] 处理 {relative_path} (scene_id={scene_id})")
 
         # 处理文件
-        result = process_file(str(file_path), scene_id, output_dir)
+        result = process_file(str(file_path), scene_id, output_dir, api_url)
 
         # 更新统计
         task_name = file_path.parent.name
@@ -378,6 +438,12 @@ def main():
         default=None,
         help='只处理指定Task (如: Task_1, Task_2)'
     )
+    parser.add_argument(
+        '--api-url', '-a',
+        type=str,
+        default=None,
+        help='API地址 (如: http://localhost:8000/api/v1/)，指定后通过HTTP调用接口'
+    )
 
     args = parser.parse_args()
 
@@ -389,25 +455,26 @@ def main():
     # 创建输出目录
     os.makedirs(args.output, exist_ok=True)
 
-    # 初始化VLM客户端
-    print("正在初始化VLM客户端...")
-    try:
-        get_vlm_client()
-        print("VLM客户端初始化成功\n")
-    except Exception as e:
-        print(f"VLM客户端初始化失败: {e}")
-        sys.exit(1)
+    # 如果不使用API模式，需要初始化VLM客户端
+    if not args.api_url:
+        print("正在初始化VLM客户端...")
+        try:
+            get_vlm_client()
+            print("VLM客户端初始化成功\n")
+        except Exception as e:
+            print(f"VLM客户端初始化失败: {e}")
+            sys.exit(1)
 
     # 如果指定了特定Task
     if args.task:
         task_dir = os.path.join(args.input, args.task)
         if os.path.exists(task_dir):
-            run_tests(task_dir, args.output, args.limit, force_task=args.task)
+            run_tests(task_dir, args.output, args.limit, force_task=args.task, api_url=args.api_url)
         else:
             print(f"错误: Task目录不存在: {task_dir}")
             sys.exit(1)
     else:
-        run_tests(args.input, args.output, args.limit)
+        run_tests(args.input, args.output, args.limit, api_url=args.api_url)
 
 
 if __name__ == "__main__":

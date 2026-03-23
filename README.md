@@ -18,6 +18,7 @@
 ```
 ├── api.py                 # FastAPI服务主程序
 ├── run_server.py          # 启动API服务
+├── start.sh               # 生产环境启动脚本（vLLM + API）
 ├── test_runner.py         # 单进程测试脚本
 ├── test_runner_parallel.py # 并行测试脚本（多VLM实例）
 ├── config.yaml            # 配置文件（YAML格式）
@@ -29,13 +30,14 @@
 │   ├── __init__.py
 │   ├── base.py           # 基类
 │   ├── task1.py          # 抛洒物检测（切片推理）
-│   ├── task2.py          # 违停检测
+│   ├── task2.py          # 违停检测（YOLO+ByteTrack+光流法）
 │   ├── task3.py          # 路面护栏病害（切片推理）
 │   └── task4.py          # 路外病害（切片推理）
 ├── utils/                 # 工具模块
+│   ├── tracker.py        # 目标追踪模块
 │   └── visualization.py  # 可视化标注
 ├── knowledge_base/        # RAG知识库文档
-├── test_all.py           # 自动化测试脚本
+├── tests/                 # 测试用例
 ├── requirements.txt      # Python依赖
 ├── Dockerfile            # Docker配置
 └── README.md             # 本文件
@@ -137,16 +139,23 @@ python test_runner.py
 
 # 并行测试（多VLM实例，更快）
 python test_runner_parallel.py
+
+# 运行单元测试
+pytest -v                            # 运行所有测试
+pytest tests/test_task1.py -v        # 运行指定测试文件
+pytest --cov=processors --cov-report=html  # 带覆盖率报告
 ```
 
 #### 命令行参数说明
 
+<!-- AUTO-GENERATED: test_runner 参数 -->
 | 参数 | 说明 | 示例 |
 |------|------|------|
 | `-t, --task` | 指定测试的Task | `-t Task_4` |
 | `-l, --limit` | 限制处理文件数 | `-l 10` |
 | `-i, --input` | 输入目录 | `-i 竞赛图片视频材料` |
 | `-o, --output` | 输出目录 | `-o output` |
+<!-- /AUTO-GENERATED -->
 
 #### 输出结果
 
@@ -170,9 +179,37 @@ output/
 
 ### 4. 启动服务
 
+#### 开发环境
+
 ```bash
 python run_server.py
 ```
+
+#### 生产环境（vLLM + FastAPI）
+
+```bash
+# 使用默认配置
+./start.sh
+
+# 自定义端口
+./start.sh --vllm-port 8001 --api-port 9000
+
+# 自定义模型路径
+./start.sh --model /path/to/model
+```
+
+<!-- AUTO-GENERATED: start.sh 参数 -->
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--vllm-host` | vLLM服务地址 | `0.0.0.0` |
+| `--vllm-port` | vLLM服务端口 | `8001` |
+| `--model` | 模型路径 | `/data` |
+| `--gpu-memory` | GPU内存使用比例 | `0.6` |
+| `--api-host` | API服务地址 | `0.0.0.0` |
+| `--api-port` | API服务端口 | `8000` |
+| `--model-name` | 模型名称 | `Qwen3_VL_8B` |
+| `--max-wait` | vLLM启动最大等待时间(秒) | `600` |
+<!-- /AUTO-GENERATED -->
 
 服务启动后访问:
 - API地址: http://localhost:8000
@@ -287,6 +324,61 @@ L2/L3输出基于专业知识库增强：
 
 系统识别以下词汇均指向"排水沟"：
 - 边沟、路侧沟、排水渠、明沟、水沟、路缘沟
+
+## 配置参考
+
+<!-- AUTO-GENERATED: config.yaml 完整配置 -->
+### 全局配置
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `detection.confidence_threshold` | 检测置信度阈值 | `0.25` |
+| `detection.iou_threshold` | IOU阈值 | `0.45` |
+| `detection.vlm_confidence_threshold` | VLM输出置信度过滤阈值 | `0.1` |
+| `server.host` | API服务地址 | `0.0.0.0` |
+| `server.port` | API服务端口 | `8000` |
+
+### VLM配置
+
+| 配置项 | 说明 | 必填 |
+|--------|------|------|
+| `vlm.provider` | 服务商 (openai/dashscope/zhipu/deepseek) | 是 |
+| `vlm.api_key` | API密钥 | 是 |
+| `vlm.base_url` | API地址 | 是 |
+| `vlm.model` | 模型名称 | 是 |
+| `vlm.max_tokens` | 输出token限制 | 否 |
+| `vlm.temperature` | 温度参数 | 否 |
+| `vlm.timeout` | 请求超时(秒) | 否 |
+
+### Task2 违停检测配置
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `model_path` | YOLO模型路径 | - |
+| `tracker` | 追踪器 (bytetrack.yaml/botsort.yaml) | `bytetrack.yaml` |
+| `device` | 设备 (auto/cuda/cpu) | `auto` |
+| `detect_interval` | 关键帧检测间隔 | `5` |
+| `downscale_ratio` | 帧缩放比例 | `1` |
+| `use_optical_flow` | 启用光流法镜头运动补偿 | `true` |
+| `static_time_window` | 静止判断时间窗口(帧数) | `30` |
+| `static_dist_threshold` | 静止判断位移阈值(像素) | `20.0` |
+| `static_smooth_frames` | 迟滞帧数 | `30` |
+| `static_ratio_threshold` | 静止占比阈值 | `0.5` |
+| `save_static_images` | 保存静止车辆标注图片 | `true` |
+| `use_sahi` | 启用SAHI切片检测 | `false` |
+| `sahi_slice_width` | SAHI切片宽度 | `1280` |
+| `sahi_slice_height` | SAHI切片高度 | `1280` |
+| `use_rag` | 启用RAG知识库 | `true` |
+
+### 切片推理配置
+
+| 配置项 | 说明 | 建议值 |
+|--------|------|--------|
+| `use_tiled_inference` | 是否启用切片推理 | 小目标场景开启 |
+| `tile_size` | 切片尺寸(像素) | `640-1280` |
+| `tile_overlap` | 切片重叠比例 | `0.1-0.2` |
+| `merge_iou_threshold` | 合并IOU阈值 | `0.001` |
+<!-- /AUTO-GENERATED -->
 
 ## Docker部署
 

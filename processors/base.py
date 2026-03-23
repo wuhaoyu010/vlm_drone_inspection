@@ -11,6 +11,7 @@ import sys
 import tempfile
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Tuple, Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .utils import get_image_size, slice_image, merge_detections
 
@@ -358,6 +359,12 @@ class BaseProcessor(ABC):
         Returns:
             是否成功启用RAG
         """
+        # 如果配置中已禁用RAG，直接返回
+        if not self.use_rag:
+            print(f"[{task_name}] RAG已在配置中禁用")
+            return False
+
+        # 否则检查RAG是否可用
         self.use_rag = RAG_AVAILABLE
 
         if self.use_rag:
@@ -615,7 +622,7 @@ class BaseProcessor(ABC):
         default_category: str = "未知",
         task_name: str = "Task",
     ) -> List[Dict]:
-        """切片推理公共方法
+        """切片推理公共方法 - 并发版本
 
         Args:
             image_path: 图像路径
@@ -633,15 +640,18 @@ class BaseProcessor(ABC):
         tile_size = tile_config.get("tile_size", 640)
         overlap = tile_config.get("tile_overlap", 0.2)
         merge_iou = tile_config.get("merge_iou_threshold", 0.3)
+        max_workers = tile_config.get("max_workers", 8)  # 并发线程数
 
         print(f"[{task_name}] 切片推理: tile_size={tile_size}, overlap={overlap:.0%}")
         tiles = slice_image(image_path, tile_size, overlap)
-        print(f"[{task_name}] 切片数量: {len(tiles)}")
+        print(f"[{task_name}] 切片数量: {len(tiles)}, 并发线程: {max_workers}")
 
         all_detections = []
 
-        for i, (tile_img, x_off, y_off, tile_w, tile_h) in enumerate(tiles):
-            detections = self._process_tiled_slice(
+        # 并发处理所有切片
+        def process_single_tile(tile_info):
+            i, (tile_img, x_off, y_off, tile_w, tile_h) = tile_info
+            return self._process_tiled_slice(
                 tile_img,
                 x_off,
                 y_off,
@@ -654,7 +664,17 @@ class BaseProcessor(ABC):
                 infer_scene_id_func,
                 default_category,
             )
-            all_detections.extend(detections)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(process_single_tile, (i, tile))
+                       for i, tile in enumerate(tiles)]
+
+            for future in as_completed(futures):
+                try:
+                    detections = future.result()
+                    all_detections.extend(detections)
+                except Exception as e:
+                    print(f"[{task_name}] 切片处理异常: {e}")
 
         # 合并重叠检测结果
         merged = merge_detections(all_detections, merge_iou, group_by_category=True)

@@ -15,7 +15,7 @@ set -e
 VLLM_HOST="0.0.0.0"
 VLLM_PORT=8001
 VLLM_MODEL="/data"
-VLLM_GPU_MEMORY=0.6
+VLLM_GPU_MEMORY=0.92
 VLLM_MAX_LEN=6000
 VLLM_MODEL_NAME="Qwen3_VL_8B"
 
@@ -185,7 +185,7 @@ log_info "  - GPU内存: ${VLLM_GPU_MEMORY}"
 log_info "  - 日志将实时显示..."
 echo ""
 
-# 启动 vLLM 并实时显示日志
+# 启动 vLLM 并实时显示日志（优化批处理参数）
 vllm serve \
     --gpu-memory-utilization $VLLM_GPU_MEMORY \
     --host $VLLM_HOST \
@@ -197,7 +197,8 @@ vllm serve \
     --tensor_parallel_size 1 \
     --dtype auto \
     --mm-processor-cache-gb 0 \
-    --limit-mm-per-prompt '{"image":1,"video":0}' \
+    --max-num-seqs 16 \
+    --max-num-batched-tokens 8192 \
     --served-model-name $VLLM_MODEL_NAME \
     2>&1 | tee logs/vllm.log &
 
@@ -250,8 +251,8 @@ log_info "  - 地址: http://${API_HOST}:${API_PORT}"
 # 启动 API 服务
 cd "$(dirname "$0")"
 
-# 使用 uvicorn 启动
-python -m uvicorn api:app --host $API_HOST --port $API_PORT > logs/api.log 2>&1 &
+# 使用 uvicorn 启动（实时显示日志）
+python3 -m uvicorn api:app --host $API_HOST --port $API_PORT 2>&1 | tee logs/api.log &
 
 API_PID=$!
 log_info "API 服务已启动 (PID: $API_PID)"

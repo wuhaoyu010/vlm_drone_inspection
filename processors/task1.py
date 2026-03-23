@@ -40,6 +40,8 @@ try:
             "tile_size": task_config.get("tile_size", 640),
             "tile_overlap": task_config.get("tile_overlap", 0.2),
             "merge_iou_threshold": task_config.get("merge_iou_threshold", 0.3),
+            "max_workers": task_config.get("max_workers", 8),
+            "use_rag": task_config.get("use_rag", False),
         }
 except ImportError:
 
@@ -49,6 +51,8 @@ except ImportError:
             "tile_size": 640,
             "tile_overlap": 0.2,
             "merge_iou_threshold": 0.3,
+            "max_workers": 8,
+            "use_rag": False,
         }
 
 
@@ -58,8 +62,8 @@ class Task1Processor(BaseProcessor):
     def __init__(self, vlm_client):
         super().__init__(vlm_client)
         self.knowledge_base = None
-        self.use_rag = False
         self.tile_config = get_task1_config()
+        self.use_rag = self.tile_config.get("use_rag", False)
         self._init_rag()
 
     def _init_rag(self):

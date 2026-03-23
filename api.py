@@ -4,8 +4,8 @@ FastAPI 服务主程序
 
 import os
 import tempfile
+import time
 import uuid
-from typing import Optional
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -53,8 +53,6 @@ class DetectionResponse(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """启动时初始化 - 预热所有组件"""
-    import time
-
     start_time = time.time()
 
     print("\n" + "=" * 60)
@@ -282,6 +280,7 @@ async def detect_compatible(
         - 8: 排水沟破损
         - 9: 标志牌异常
     """
+    request_start_time = time.time()
     try:
         # 验证scene_id
         if scene_id not in SCENE_MAPPING:
@@ -300,6 +299,10 @@ async def detect_compatible(
             # 获取处理器并处理
             processor = get_processor(scene_id)
             result = processor.process(temp_file.name, scene_id)
+
+            # 打印推理耗时
+            elapsed_time = time.time() - request_start_time
+            print(f"[推理耗时] scene_id={scene_id}, 耗时={elapsed_time:.2f}秒")
 
             if scene_id == 1:
                 return result  # 违停场景直接返回原始结果（兼容比赛要求）
@@ -322,6 +325,9 @@ async def detect_compatible(
         import traceback
 
         traceback.print_exc()
+        # 打印推理耗时（失败情况）
+        elapsed_time = time.time() - request_start_time
+        print(f"[推理耗时] scene_id={scene_id}, 耗时={elapsed_time:.2f}秒 (失败)")
         return {"success": False, "message": str(e), "scene_id": scene_id, "data": {}}
 
 
