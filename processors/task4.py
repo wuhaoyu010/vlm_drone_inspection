@@ -81,9 +81,9 @@ class Task4Processor(BaseProcessor):
     """路外病害检测处理器 - 支持RAG知识库增强和切片推理"""
 
     # 场景ID到类别的映射（符合复赛评分细则）
-    # Scene5: 边坡破损, Scene6: 排水沟积水, Scene7: 排水沟破损
+    # Scene5: 边坡滑坡, Scene6: 排水沟积水, Scene7: 排水沟破损
     SCENE_CATEGORY_MAP = {
-        5: "边坡破损",
+        5: "边坡滑坡",
         6: "排水沟积水",
         7: "排水沟破损",
     }
