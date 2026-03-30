@@ -6,7 +6,7 @@ detection:
 
 # 模型配置（各Task使用的模型路径）
 models:
-  # Task1: 抛洒物检测（预留）
+  # Task1: 抛洒物检测
   task1:
     model_path: ""           # YOLO模型路径，为空则使用VLM
     conf_threshold: 0.25
@@ -19,68 +19,57 @@ models:
     max_workers: 8              # 并发线程数（加速切片推理）
     use_rag: false              # 是否启用RAG知识库（关闭以加速）
 
-  # Task2: 车辆违停检测
+  # Task2: 路面病害检测（路面裂缝/坑洼/积水/护栏破损）
   task2:
-    model_path: "P2024112501demo.P2024112501demo-001.at-det-sub-wgsb.m-yolov8det-sub-wgsb+20260318.44.pt"   # YOLO模型路径（yolov8n/yolov8s/yolo26n/yolo26x）
-    conf_threshold: 0.55        # 检测置信度阈值
-    iou_threshold: 0.45         # IOU阈值
-    # VLM过滤开关（关闭后直接使用YOLO追踪结果，加速推理）
-    use_vlm_filter: false       # 是否使用VLM大模型过滤误检
-    # 车辆类别配置（类别ID: 类别名称）
-    vehicle_classes:
-      0: wrecker
-      1: police_car
-      2: maintenance_vehicle
-      3: Machineshop
-      4: Truck
-      5: car
-      6: bus
-    min_track_frames: 10        # 最小静止帧数（判断违停阈值）
-    trajectory_length: 50       # 轨迹显示长度（帧数）
-    tracker: "botsort.yaml"     # 追踪器：bytetrack.yaml / botsort.yaml
-    device: "auto"              # auto(自动检测)/cuda(强制GPU)/cpu(强制CPU)
-    # 性能优化参数
-    detect_interval: 1          # 关键帧检测间隔（每N帧检测一次，减少检测次数）
-    downscale_ratio: 1          # 帧缩放比例（0.75=缩小到75%，提升性能）
-    # 静止判断参数（demo_15.py逻辑）
-    static_time_window: 30      # 静止判断时间窗口（帧数）
-    static_dist_threshold: 20.0 # 静止判断位移阈值（像素，补偿后轨迹位移小于此值为静止）
-    static_smooth_frames: 30    # 迟滞帧数（连续静止N帧后才判定为静止，避免误判）
-    static_ratio_threshold: 0.5 # 静止占比阈值（静止帧数>=总帧数*50%才判定为最终静止）
-    use_optical_flow: true      # 是否启用光流法镜头运动补偿（适用于无人机/航拍视角）
-    # 静止车辆图片保存配置
-    save_static_images: true    # 是否保存静止车辆标注图片
-    static_img_dir: "./static_cars_imgs"  # 静止车辆图片保存目录
-    # RAG知识库参数（增强L2/L3专业性）
-    use_rag: false              # 是否启用RAG知识库检索（关闭以加速）
-    knowledge_dir: "./knowledge_base"  # 知识库文档目录（存放PDF/TXT/MD文件）
-    embedding_model_path: "./bge-small-zh-v1.5"  # 嵌入模型路径（BGE中文模型）
-
-  # Task3: 路面病害检测
-  task3:
     model_path: ""           # YOLO/分割模型路径，为空则使用VLM
     conf_threshold: 0.25
     iou_threshold: 0.45
-    # 图像切片推理参数（提升小目标检测）
-    use_tiled_inference: true    # 是否启用切片推理（设置超大值如99999可禁用）
+    # 默认切片推理参数（未单独配置的scene_id使用此配置）
+    use_tiled_inference: true    # 是否启用切片推理
     tile_size: 1280              # 切片尺寸（像素）
-    tile_overlap: 0.1             # 切片重叠比例
-    merge_iou_threshold: 0.001    # 合并检测结果时的IOU阈值
-    max_workers: 8              # 并发线程数（加速切片推理）
-    use_rag: false              # 是否启用RAG知识库（关闭以加速）
+    tile_overlap: 0.1            # 切片重叠比例
+    merge_iou_threshold: 0.001   # 合并检测结果时的IOU阈值
+    max_workers: 8               # 并发线程数（加速切片推理）
+    use_rag: false               # 是否启用RAG知识库（关闭以加速）
+    # 按scene_id单独配置切片（覆盖默认配置）
+    # scene_id: 1=裂缝, 2=坑洼, 3=积水, 4=护栏破损
+    scene_configs:
+      1:  # 路面裂缝 - 裂缝通常较细长，切片可能导致断裂，建议不切片
+        use_tiled_inference: false
+      2:  # 路面坑洼 - 小目标坑洼适合切片检测
+        use_tiled_inference: true
+        tile_size: 640
+        tile_overlap: 0.2
+      3:  # 路面积水 - 积水范围较大，不需要切片
+        use_tiled_inference: false
+      4:  # 护栏破损 - 小目标护栏适合切片检测
+        use_tiled_inference: true
+        tile_size: 640
+        tile_overlap: 0.2
 
-  # Task4: 路外病害检测
-  task4:
+  # Task3: 路外病害检测（边坡破损/排水沟积水/排水沟破损）
+  task3:
     model_path: ""           # YOLO模型路径，为空则使用VLM
     conf_threshold: 0.25
     iou_threshold: 0.45
-    # 图像切片推理参数（提升小目标检测，如远处排水沟积水）
-    use_tiled_inference: false    # 是否启用切片推理
+    # 默认切片推理参数（未单独配置的scene_id使用此配置）
+    use_tiled_inference: false   # 是否启用切片推理
     tile_size: 1280              # 切片尺寸（像素）
     tile_overlap: 0.1            # 切片重叠比例
-    merge_iou_threshold: 0.001     # 合并检测结果时的IOU阈值
-    max_workers: 8              # 并发线程数（加速切片推理）
-    use_rag: false              # 是否启用RAG知识库（关闭以加速）
+    merge_iou_threshold: 0.001   # 合并检测结果时的IOU阈值
+    max_workers: 8               # 并发线程数（加速切片推理）
+    use_rag: false               # 是否启用RAG知识库（关闭以加速）
+    # 按scene_id单独配置切片（覆盖默认配置）
+    # scene_id: 5=边坡破损, 6=排水沟积水, 7=排水沟破损
+    scene_configs:
+      5:  # 边坡破损 - 范围较大，不需要切片
+        use_tiled_inference: false
+      6:  # 排水沟积水 - 边缘区域小目标，适合切片
+        use_tiled_inference: false
+      7:  # 排水沟破损 - 边缘区域小目标，适合切片
+        use_tiled_inference: true
+        tile_size: 640
+        tile_overlap: 0.2
 
 # 视频处理配置（针对token限制优化）
 video:
@@ -94,15 +83,13 @@ logging:
   level: INFO
 scenes:
   0: 路面抛洒物
-  1: 车辆违停
-  2: 路面裂缝
-  3: 路面坑洼
-  4: 路面积水
-  5: 护栏破损
-  6: 边坡滑坡
-  7: 排水沟积水
-  8: 排水沟破损
-  9: 标志牌异常
+  1: 路面裂缝
+  2: 路面坑洼
+  3: 路面积水
+  4: 护栏破损
+  5: 边坡破损
+  6: 排水沟积水
+  7: 排水沟破损
 server:
   host: 0.0.0.0
   port: 8000

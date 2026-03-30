@@ -11,7 +11,14 @@ from typing import Dict, Any, Optional, List
 
 from .base import BaseProcessor, RAG_MAX_ITEMS, RAG_MAX_KNOWLEDGE_LEN, RAG_MAX_ORIGINAL_LEN
 from .utils import get_image_size
-from prompts import TASK4_SYSTEM_PROMPT, TASK4_USER_PROMPT
+from prompts import (
+    TASK4_SYSTEM_PROMPT, TASK4_USER_PROMPT,
+    TASK4_LANDSLIDE_SYSTEM_PROMPT, TASK4_LANDSLIDE_USER_PROMPT,
+    TASK4_DRAIN_WATER_SYSTEM_PROMPT, TASK4_DRAIN_WATER_USER_PROMPT,
+    TASK4_DRAIN_DAMAGE_SYSTEM_PROMPT, TASK4_DRAIN_DAMAGE_USER_PROMPT,
+    TASK4_SIGN_SYSTEM_PROMPT, TASK4_SIGN_USER_PROMPT,
+    get_prompts_by_scene,
+)
 
 import sys
 
@@ -32,9 +39,12 @@ except ImportError:
 try:
     from config import config
 
-    def get_task4_config() -> Dict[str, Any]:
+    def get_task4_config(scene_id: int = None) -> Dict[str, Any]:
+        """获取Task4配置，支持按scene_id覆盖切片参数"""
         task_config = config.get_task_config("task4")
-        return {
+
+        # 默认配置
+        default_config = {
             "use_tiled_inference": task_config.get("use_tiled_inference", False),
             "tile_size": task_config.get("tile_size", 1280),
             "tile_overlap": task_config.get("tile_overlap", 0.2),
@@ -42,9 +52,21 @@ try:
             "max_workers": task_config.get("max_workers", 8),
             "use_rag": task_config.get("use_rag", False),
         }
+
+        # 如果指定了scene_id，检查是否有单独配置
+        if scene_id is not None:
+            scene_configs = task_config.get("scene_configs", {})
+            if str(scene_id) in scene_configs:
+                scene_config = scene_configs[str(scene_id)]
+                # 用scene配置覆盖默认配置
+                for key in ["use_tiled_inference", "tile_size", "tile_overlap", "merge_iou_threshold", "max_workers"]:
+                    if key in scene_config:
+                        default_config[key] = scene_config[key]
+
+        return default_config
 except ImportError:
 
-    def get_task4_config() -> Dict[str, Any]:
+    def get_task4_config(scene_id: int = None) -> Dict[str, Any]:
         return {
             "use_tiled_inference": False,
             "tile_size": 1280,
@@ -58,20 +80,25 @@ except ImportError:
 class Task4Processor(BaseProcessor):
     """路外病害检测处理器 - 支持RAG知识库增强和切片推理"""
 
-    # 场景ID到类别的映射
+    # 场景ID到类别的映射（符合复赛评分细则）
+    # Scene5: 边坡破损, Scene6: 排水沟积水, Scene7: 排水沟破损
     SCENE_CATEGORY_MAP = {
-        6: "边坡滑坡",
-        7: "排水沟积水",
-        8: "排水沟破损",
-        9: "标志牌异常",
+        5: "边坡破损",
+        6: "排水沟积水",
+        7: "排水沟破损",
     }
 
     def __init__(self, vlm_client):
         super().__init__(vlm_client)
         self.knowledge_base = None
+        # 使用默认配置初始化（实际配置在process中根据scene_id动态获取）
         self.tile_config = get_task4_config()
         self.use_rag = self.tile_config.get("use_rag", False)
         self._init_rag()
+
+    def _get_tile_config(self, scene_id: int = None) -> Dict[str, Any]:
+        """根据scene_id获取切片配置"""
+        return get_task4_config(scene_id)
 
     def _init_rag(self):
         """初始化RAG知识库"""
@@ -152,23 +179,22 @@ class Task4Processor(BaseProcessor):
             return "轻微"
 
     def _infer_scene_id(self, category: str) -> int:
-        """根据类别推断scene_id"""
+        """根据类别推断scene_id（符合复赛评分细则）"""
         category_lower = category.lower()
 
         if (
             "边坡" in category_lower
+            or "破损" in category_lower
             or "滑坡" in category_lower
             or "坍塌" in category_lower
         ):
-            return 6
+            return 5  # 边坡破损
         elif "排水沟" in category_lower and "积水" in category_lower:
-            return 7
+            return 6  # 排水沟积水
         elif "排水沟" in category_lower:
-            return 8
-        elif "标志牌" in category_lower or "指示牌" in category_lower:
-            return 9
+            return 7  # 排水沟破损
         else:
-            return 6
+            return 5  # 默认返回边坡破损
 
     def _generate_l2_l3_for_detections(
         self, detections: List[Dict], scene_id: int
@@ -200,17 +226,24 @@ class Task4Processor(BaseProcessor):
         img_width, img_height = get_image_size(input_data)
         self._log(f"[Task4] 图像尺寸: {img_width}x{img_height}")
 
-        use_tiled = self.tile_config.get("use_tiled_inference", False)
-        tile_size = self.tile_config.get("tile_size", 1280)
+        # 根据scene_id获取对应的切片配置
+        tile_config = self._get_tile_config(scene_id)
+        use_tiled = tile_config.get("use_tiled_inference", False)
+        tile_size = tile_config.get("tile_size", 1280)
 
-        # 构建提示词（可能根据scene_id调整）
-        prompt = TASK4_USER_PROMPT
-        if scene_id is not None:
-            category = self.SCENE_CATEGORY_MAP.get(scene_id, "病害")
-            prompt = prompt.replace(
-                "检测边坡和排水沟的问题",
-                f"重点检测{category}问题，同时也可以检测其他类型问题",
-            )
+        # 日志输出配置信息
+        if scene_id is not None and scene_id in [5, 6, 7]:
+            self._log(f"[Task4] scene_id={scene_id} 切片配置: use_tiled={use_tiled}, tile_size={tile_size}")
+
+        # 使用专用提示词（根据scene_id选择）
+        if scene_id is not None and scene_id in [5, 6, 7]:
+            system_prompt, user_prompt = get_prompts_by_scene(scene_id)
+            self._log(f"[Task4] 使用专用提示词: scene_id={scene_id}")
+        else:
+            # 没有指定scene_id或scene_id不在范围内，使用通用提示词
+            system_prompt = TASK4_SYSTEM_PROMPT
+            user_prompt = TASK4_USER_PROMPT
+            self._log("[Task4] 使用通用提示词")
 
         # 判断推理模式
         if use_tiled and img_width and img_height:
@@ -221,9 +254,9 @@ class Task4Processor(BaseProcessor):
                     input_data,
                     img_width,
                     img_height,
-                    self.tile_config,
-                    prompt,
-                    TASK4_SYSTEM_PROMPT,
+                    tile_config,
+                    user_prompt,
+                    system_prompt,
                     infer_scene_id_func=self._infer_scene_id,
                     default_category="病害",
                     task_name="Task4",
@@ -252,7 +285,7 @@ class Task4Processor(BaseProcessor):
             else:
                 self._log("[Task4] 图像尺寸未超过阈值，使用标准推理")
                 result = self._standard_inference(
-                    input_data, img_width, img_height, scene_id, prompt
+                    input_data, img_width, img_height, scene_id, user_prompt, system_prompt
                 )
                 if scene_id is not None and result.get("l1_result"):
                     before = len(result["l1_result"])
@@ -265,7 +298,7 @@ class Task4Processor(BaseProcessor):
         else:
             self._log("[Task4] 切片推理未启用或图像尺寸无效，使用标准推理")
             result = self._standard_inference(
-                input_data, img_width, img_height, scene_id, prompt
+                input_data, img_width, img_height, scene_id, user_prompt, system_prompt
             )
             if scene_id is not None and result.get("l1_result"):
                 before = len(result["l1_result"])
@@ -329,24 +362,20 @@ class Task4Processor(BaseProcessor):
         img_height: int,
         scene_id: int,
         prompt: str = None,
+        system_prompt: str = None,
     ) -> Dict[str, Any]:
         """标准推理"""
         if prompt is None:
             prompt = TASK4_USER_PROMPT
-            if scene_id is not None:
-                category = self.SCENE_CATEGORY_MAP.get(scene_id, "病害")
-                prompt = prompt.replace(
-                    "检测边坡和排水沟的问题",
-                    f"重点检测{category}问题，同时也可以检测其他类型问题",
-                )
-                self._log(f"[Task4] 提示词已调整: 重点检测{category}")
+        if system_prompt is None:
+            system_prompt = TASK4_SYSTEM_PROMPT
 
         return self._standard_inference_common(
             input_data,
             img_width,
             img_height,
             prompt,
-            TASK4_SYSTEM_PROMPT,
+            system_prompt,
             scene_id=scene_id,
             infer_scene_id_func=self._infer_scene_id,
             task_name="Task4",

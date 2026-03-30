@@ -10,7 +10,14 @@ from typing import Dict, Any, Optional, List
 
 from .base import BaseProcessor, RAG_MAX_ITEMS, RAG_MAX_KNOWLEDGE_LEN, RAG_MAX_ORIGINAL_LEN
 from .utils import get_image_size
-from prompts import TASK3_SYSTEM_PROMPT, TASK3_USER_PROMPT
+from prompts import (
+    TASK3_SYSTEM_PROMPT, TASK3_USER_PROMPT,
+    TASK3_CRACK_SYSTEM_PROMPT, TASK3_CRACK_USER_PROMPT,
+    TASK3_POTHOLE_SYSTEM_PROMPT, TASK3_POTHOLE_USER_PROMPT,
+    TASK3_PUDDLE_SYSTEM_PROMPT, TASK3_PUDDLE_USER_PROMPT,
+    TASK3_GUARDRAIL_SYSTEM_PROMPT, TASK3_GUARDRAIL_USER_PROMPT,
+    get_prompts_by_scene,
+)
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -29,9 +36,12 @@ except ImportError:
 # 配置导入
 try:
     from config import config
-    def get_task3_config() -> Dict[str, Any]:
+    def get_task3_config(scene_id: int = None) -> Dict[str, Any]:
+        """获取Task3配置，支持按scene_id覆盖切片参数"""
         task_config = config.get_task_config("task3")
-        return {
+
+        # 默认配置
+        default_config = {
             "use_tiled_inference": task_config.get("use_tiled_inference", False),
             "tile_size": task_config.get("tile_size", 1280),
             "tile_overlap": task_config.get("tile_overlap", 0.2),
@@ -39,8 +49,20 @@ try:
             "max_workers": task_config.get("max_workers", 8),
             "use_rag": task_config.get("use_rag", False),
         }
+
+        # 如果指定了scene_id，检查是否有单独配置
+        if scene_id is not None:
+            scene_configs = task_config.get("scene_configs", {})
+            if str(scene_id) in scene_configs:
+                scene_config = scene_configs[str(scene_id)]
+                # 用scene配置覆盖默认配置
+                for key in ["use_tiled_inference", "tile_size", "tile_overlap", "merge_iou_threshold", "max_workers"]:
+                    if key in scene_config:
+                        default_config[key] = scene_config[key]
+
+        return default_config
 except ImportError:
-    def get_task3_config() -> Dict[str, Any]:
+    def get_task3_config(scene_id: int = None) -> Dict[str, Any]:
         return {
             "use_tiled_inference": False,
             "tile_size": 1280,
@@ -54,15 +76,21 @@ except ImportError:
 class Task3Processor(BaseProcessor):
     """路面与护栏病害检测处理器 - 支持RAG知识库增强和切片推理"""
 
-    # 场景ID到类别的映射
-    SCENE_CATEGORY_MAP = {2: "裂缝", 3: "坑洼", 4: "积水", 5: "护栏破损"}
+    # 场景ID到类别的映射（符合复赛评分细则）
+    # Scene1: 裂缝, Scene2: 坑洼, Scene3: 积水, Scene4: 护栏破损
+    SCENE_CATEGORY_MAP = {1: "裂缝", 2: "坑洼", 3: "积水", 4: "护栏破损"}
 
     def __init__(self, vlm_client):
         super().__init__(vlm_client)
         self.knowledge_base = None
+        # 使用默认配置初始化（实际配置在process中根据scene_id动态获取）
         self.tile_config = get_task3_config()
         self.use_rag = self.tile_config.get("use_rag", False)
         self._init_rag()
+
+    def _get_tile_config(self, scene_id: int = None) -> Dict[str, Any]:
+        """根据scene_id获取切片配置"""
+        return get_task3_config(scene_id)
 
     def _init_rag(self):
         """初始化RAG知识库"""
@@ -145,19 +173,19 @@ class Task3Processor(BaseProcessor):
             return "轻微"
 
     def _infer_scene_id(self, category: str) -> int:
-        """根据类别推断scene_id"""
+        """根据类别推断scene_id（符合复赛评分细则）"""
         category_lower = category.lower()
 
         if "裂缝" in category_lower or "裂痕" in category_lower:
-            return 2
+            return 1  # 路面裂缝
         elif "坑洼" in category_lower or "坑洞" in category_lower or "凹陷" in category_lower:
-            return 3
+            return 2  # 路面坑洼
         elif "积水" in category_lower or "水" in category_lower:
-            return 4
+            return 3  # 路面积水
         elif "护栏" in category_lower:
-            return 5
+            return 4  # 护栏破损
         else:
-            return 2
+            return 1  # 默认返回裂缝
 
     def _generate_l2_l3_for_detections(self, detections: List[Dict], scene_id: int) -> tuple:
         """根据检测结果生成 L2/L3 文本"""
@@ -183,17 +211,24 @@ class Task3Processor(BaseProcessor):
         img_width, img_height = get_image_size(input_data)
         self._log(f"[Task3] 图像尺寸: {img_width}x{img_height}")
 
-        use_tiled = self.tile_config.get("use_tiled_inference", False)
-        tile_size = self.tile_config.get("tile_size", 1280)
+        # 根据scene_id获取对应的切片配置
+        tile_config = self._get_tile_config(scene_id)
+        use_tiled = tile_config.get("use_tiled_inference", False)
+        tile_size = tile_config.get("tile_size", 1280)
 
-        # 构建提示词（可能根据scene_id调整）
-        prompt = TASK3_USER_PROMPT
-        if scene_id is not None:
-            category = self.SCENE_CATEGORY_MAP.get(scene_id, "病害")
-            prompt = prompt.replace(
-                "检测路面病害和护栏损坏",
-                f"重点检测{category}问题，同时也可以检测其他类型病害",
-            )
+        # 日志输出配置信息
+        if scene_id is not None and scene_id in [1, 2, 3, 4]:
+            self._log(f"[Task3] scene_id={scene_id} 切片配置: use_tiled={use_tiled}, tile_size={tile_size}")
+
+        # 使用专用提示词（根据scene_id选择）
+        if scene_id is not None and scene_id in [1, 2, 3, 4]:
+            system_prompt, user_prompt = get_prompts_by_scene(scene_id)
+            self._log(f"[Task3] 使用专用提示词: scene_id={scene_id}")
+        else:
+            # 没有指定scene_id或scene_id不在范围内，使用通用提示词
+            system_prompt = TASK3_SYSTEM_PROMPT
+            user_prompt = TASK3_USER_PROMPT
+            self._log("[Task3] 使用通用提示词")
 
         # 判断推理模式
         if use_tiled and img_width and img_height:
@@ -202,8 +237,8 @@ class Task3Processor(BaseProcessor):
 
                 tiled_detections = self._process_with_tiled_inference_common(
                     input_data, img_width, img_height,
-                    self.tile_config,
-                    prompt, TASK3_SYSTEM_PROMPT,
+                    tile_config,
+                    user_prompt, system_prompt,
                     infer_scene_id_func=self._infer_scene_id,
                     default_category="病害",
                     task_name="Task3"
@@ -225,14 +260,14 @@ class Task3Processor(BaseProcessor):
                 }
             else:
                 self._log("[Task3] 图像尺寸未超过阈值，使用标准推理")
-                result = self._standard_inference(input_data, img_width, img_height, scene_id, prompt)
+                result = self._standard_inference(input_data, img_width, img_height, scene_id, user_prompt, system_prompt)
                 if scene_id is not None and result.get("l1_result"):
                     before = len(result["l1_result"])
                     result["l1_result"] = self._filter_by_scene_id(result["l1_result"], scene_id)
                     self._log(f"[Task3] scene_id过滤: {before} -> {len(result['l1_result'])}个结果")
         else:
             self._log("[Task3] 切片推理未启用或图像尺寸无效，使用标准推理")
-            result = self._standard_inference(input_data, img_width, img_height, scene_id, prompt)
+            result = self._standard_inference(input_data, img_width, img_height, scene_id, user_prompt, system_prompt)
             if scene_id is not None and result.get("l1_result"):
                 before = len(result["l1_result"])
                 result["l1_result"] = self._filter_by_scene_id(result["l1_result"], scene_id)
@@ -276,21 +311,16 @@ class Task3Processor(BaseProcessor):
 
         return result
 
-    def _standard_inference(self, input_data: str, img_width: int, img_height: int, scene_id: int, prompt: str = None) -> Dict[str, Any]:
+    def _standard_inference(self, input_data: str, img_width: int, img_height: int, scene_id: int, prompt: str = None, system_prompt: str = None) -> Dict[str, Any]:
         """标准推理"""
         if prompt is None:
             prompt = TASK3_USER_PROMPT
-            if scene_id is not None:
-                category = self.SCENE_CATEGORY_MAP.get(scene_id, "病害")
-                prompt = prompt.replace(
-                    "检测路面病害和护栏损坏",
-                    f"重点检测{category}问题，同时也可以检测其他类型病害",
-                )
-                self._log(f"[Task3] 提示词已调整: 重点检测{category}")
+        if system_prompt is None:
+            system_prompt = TASK3_SYSTEM_PROMPT
 
         return self._standard_inference_common(
             input_data, img_width, img_height,
-            prompt, TASK3_SYSTEM_PROMPT,
+            prompt, system_prompt,
             scene_id=scene_id,
             infer_scene_id_func=self._infer_scene_id,
             task_name="Task3"

@@ -6,13 +6,15 @@ import os
 import tempfile
 import time
 import uuid
+import asyncio
+from functools import wraps
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from config import HOST, PORT, SCENE_MAPPING
 from vlm_client import get_vlm_client
-from processors import Task1Processor, Task2Processor, Task3Processor, Task4Processor
+from processors import Task1Processor, Task3Processor, Task4Processor
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -24,21 +26,46 @@ app = FastAPI(
 # 初始化处理器
 processors = {}
 
+# 超时控制装饰器（复赛要求：所有场景60秒超时）
+def timeout_handler(seconds: int):
+    """超时控制装饰器
+
+    Args:
+        seconds: 超时秒数（复赛要求60秒）
+
+    Raises:
+        HTTPException: 超时时返回408错误
+    """
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            try:
+                return await asyncio.wait_for(func(*args, **kwargs), timeout=seconds)
+            except asyncio.TimeoutError:
+                raise HTTPException(
+                    status_code=408,
+                    detail=f"处理超时（超过{seconds}秒限制），该样本L1/L2/L3将判0分"
+                )
+        return wrapper
+    return decorator
+
 
 def get_processor(scene_id: int):
     """获取对应的处理器"""
     vlm_client = get_vlm_client()
 
+    # 场景编号映射（符合复赛评分细则）
+    # Scene0: 抛洒物 (Task1)
+    # Scene1-4: 路面病害 (Task2: 裂缝/坑洼/积水/护栏破损)
+    # Scene5-7: 路外病害 (Task3: 边坡破损/排水沟积水/排水沟破损)
     if scene_id == 0:  # 抛洒物
         return Task1Processor(vlm_client)
-    elif scene_id == 1:  # 违停
-        return Task2Processor(vlm_client)
-    elif scene_id in [2, 3, 4, 5]:  # 路面护栏病害
+    elif scene_id in [1, 2, 3, 4]:  # 路面病害（裂缝/坑洼/积水/护栏破损）
         return Task3Processor(vlm_client)
-    elif scene_id in [6, 7, 8, 9]:  # 路外病害（新增scene_id=9标志牌异常）
+    elif scene_id in [5, 6, 7]:  # 路外病害（边坡破损/排水沟积水/排水沟破损）
         return Task4Processor(vlm_client)
     else:
-        raise HTTPException(status_code=400, detail=f"未知的场景ID: {scene_id}")
+        raise HTTPException(status_code=400, detail=f"无效的场景ID: {scene_id}。有效范围: 0-7")
 
 
 class DetectionResponse(BaseModel):
@@ -90,29 +117,23 @@ async def startup_event():
     try:
         vlm_client = get_vlm_client()
 
-        # Task1 处理器
+        # Task1 处理器（抛洒物）
         from processors import Task1Processor
 
         processors[0] = Task1Processor(vlm_client)
         print("      [OK] Task1 处理器已加载")
 
-        # Task2 处理器（YOLO 模型较重，初始化时会自动加载）
-        from processors import Task2Processor
-
-        processors[1] = Task2Processor(vlm_client)
-        print("      [OK] Task2 处理器已加载（YOLO + ByteTrack）")
-
-        # Task3 处理器
+        # Task3 处理器（路面病害）
         from processors import Task3Processor
 
         processors[2] = Task3Processor(vlm_client)
-        print("      [OK] Task3 处理器已加载")
+        print("      [OK] Task3 处理器已加载（路面病害检测）")
 
-        # Task4 处理器
+        # Task4 处理器（路外病害）
         from processors import Task4Processor
 
         processors[3] = Task4Processor(vlm_client)
-        print("      [OK] Task4 处理器已加载")
+        print("      [OK] Task4 处理器已加载（路外病害检测）")
 
     except Exception as e:
         print(f"      [FAIL] 处理器预热失败: {e}")
@@ -163,7 +184,7 @@ async def detect(
     image_or_video: UploadFile = File(..., description="上传的图片或视频文件"),
     scene_id: int = Form(
         ...,
-        description="场景ID: 0-抛洒物, 1-违停, 2-裂缝, 3-坑洼, 4-积水, 5-护栏破损, 6-边坡滑坡, 7-排水沟积水, 8-排水沟破损, 9-标志牌异常",
+        description="场景ID: 0-抛洒物, 1-裂缝, 2-坑洼, 3-积水, 4-护栏破损, 5-边坡破损, 6-排水沟积水, 7-排水沟破损",
     ),
 ):
     """
@@ -172,15 +193,13 @@ async def detect(
     - **image_or_video**: 上传的图片或视频文件
     - **scene_id**: 场景ID
         - 0: 路面抛洒物
-        - 1: 车辆违停
-        - 2: 路面裂缝
-        - 3: 路面坑洼
-        - 4: 路面积水
-        - 5: 护栏破损
-        - 6: 边坡滑坡
-        - 7: 排水沟积水
-        - 8: 排水沟破损
-        - 9: 标志牌异常
+        - 1: 路面裂缝
+        - 2: 路面坑洼
+        - 3: 路面积水
+        - 4: 护栏破损
+        - 5: 边坡破损
+        - 6: 排水沟积水
+        - 7: 排水沟破损
     """
     try:
         # 验证scene_id
@@ -199,8 +218,6 @@ async def detect(
             # 获取处理器并处理
             processor = get_processor(scene_id)
             result = processor.process(temp_file.name, scene_id)
-            if scene_id == 1:
-                return result  # 违停场景直接返回原始结果（兼容比赛要求）
 
             return DetectionResponse(
                 success=True, message="检测完成", scene_id=scene_id, data=result
@@ -259,6 +276,7 @@ async def detect_by_path(
 
 # 兼容比赛要求的接口格式
 @app.post("/api/v1/")
+@timeout_handler(60)  # 复赛要求：所有场景60秒超时
 async def detect_compatible(
     image_or_video: UploadFile = File(..., description="上传的图片或视频文件"),
     scene_id: int = Form(..., description="场景ID"),
@@ -270,15 +288,13 @@ async def detect_compatible(
     - **image_or_video**: 上传的图片或视频文件
     - **scene_id**: 场景ID
         - 0: 路面抛洒物
-        - 1: 车辆违停
-        - 2: 路面裂缝
-        - 3: 路面坑洼
-        - 4: 路面积水
-        - 5: 护栏破损
-        - 6: 边坡滑坡
-        - 7: 排水沟积水
-        - 8: 排水沟破损
-        - 9: 标志牌异常
+        - 1: 路面裂缝
+        - 2: 路面坑洼
+        - 3: 路面积水
+        - 4: 护栏破损
+        - 5: 边坡破损
+        - 6: 排水沟积水
+        - 7: 排水沟破损
     """
     request_start_time = time.time()
     try:
@@ -303,9 +319,6 @@ async def detect_compatible(
             # 打印推理耗时
             elapsed_time = time.time() - request_start_time
             print(f"[推理耗时] scene_id={scene_id}, 耗时={elapsed_time:.2f}秒")
-
-            if scene_id == 1:
-                return result  # 违停场景直接返回原始结果（兼容比赛要求）
 
             return {
                 "success": True,

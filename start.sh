@@ -16,7 +16,7 @@ VLLM_HOST="0.0.0.0"
 VLLM_PORT=8001
 VLLM_MODEL="/data"
 VLLM_GPU_MEMORY=0.92
-VLLM_MAX_LEN=6000
+VLLM_MAX_LEN=5500
 VLLM_MODEL_NAME="Qwen3_VL_8B"
 
 API_HOST="0.0.0.0"
@@ -197,8 +197,8 @@ vllm serve \
     --tensor_parallel_size 1 \
     --dtype auto \
     --mm-processor-cache-gb 0 \
-    --max-num-seqs 16 \
-    --max-num-batched-tokens 8192 \
+    --max-num-seqs 4 \
+    --max-num-batched-tokens 6000 \
     --served-model-name $VLLM_MODEL_NAME \
     2>&1 | tee logs/vllm.log &
 
